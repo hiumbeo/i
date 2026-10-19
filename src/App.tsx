@@ -389,6 +389,17 @@ export default function App() {
                     <div className="flex flex-wrap gap-1.5 pt-1">
                       <button
                         type="button"
+                        onClick={() => { setActivityType('PLAYING'); setActivityName('Visual Studio Code + Spotify Novocaine'); }}
+                        className={`text-[11px] px-3 py-1.5 rounded-xl border transition flex items-center gap-1.5 font-bold ${
+                          activityName.includes('Novocaine')
+                            ? 'bg-gradient-to-r from-indigo-600/40 via-purple-600/40 to-emerald-600/40 text-white border-emerald-500/60 shadow-md'
+                            : 'bg-slate-950 text-indigo-300 border-indigo-500/30 hover:border-indigo-500'
+                        }`}
+                      >
+                        🔥 Treo 2 Cái: Studio + Spotify (Novocaine)
+                      </button>
+                      <button
+                        type="button"
                         onClick={() => { setActivityType('PLAYING'); setActivityName('Visual Studio Code'); }}
                         className={`text-[11px] px-2.5 py-1 rounded-lg border transition ${
                           activityName === 'Visual Studio Code'
@@ -396,7 +407,7 @@ export default function App() {
                             : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
                         }`}
                       >
-                        💻 VS Code (Có Ảnh)
+                        💻 VS Code PC
                       </button>
                       <button
                         type="button"
@@ -407,18 +418,7 @@ export default function App() {
                             : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
                         }`}
                       >
-                        🎧 Spotify (Có Ảnh Bìa)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => { setActivityType('PLAYING'); setActivityName('VALORANT'); }}
-                        className={`text-[11px] px-2.5 py-1 rounded-lg border transition ${
-                          activityName === 'VALORANT'
-                            ? 'bg-rose-600/30 text-rose-300 border-rose-500/50'
-                            : 'bg-slate-950 text-slate-400 border-slate-800 hover:text-white'
-                        }`}
-                      >
-                        🎯 VALORANT
+                        🎧 Spotify Riêng
                       </button>
                     </div>
                   </div>
@@ -549,18 +549,27 @@ export default function App() {
                     </div>
 
                     {/* Fast Switch Buttons */}
-                    <div className="flex gap-2">
+                    <div className="space-y-2">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => handleTriggerAction('status_pc')}
+                          className="flex-1 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition"
+                        >
+                          <Laptop className="w-3.5 h-3.5" /> Icon PC Desktop
+                        </button>
+                        <button
+                          onClick={() => handleTriggerAction('status_mobile')}
+                          className="flex-1 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition"
+                        >
+                          <Smartphone className="w-3.5 h-3.5" /> Icon Mobile
+                        </button>
+                      </div>
+
                       <button
-                        onClick={() => handleTriggerAction('status_pc')}
-                        className="flex-1 bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-indigo-300 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition"
+                        onClick={() => handleTriggerAction('dual_spotify_novocaine' as any)}
+                        className="w-full bg-gradient-to-r from-indigo-600/40 via-purple-600/40 to-emerald-600/40 hover:from-indigo-600/60 hover:to-emerald-600/60 border border-indigo-400/50 text-white py-2.5 rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-lg transition"
                       >
-                        <Laptop className="w-4 h-4" /> Đổi sang PC Desktop Ngay
-                      </button>
-                      <button
-                        onClick={() => handleTriggerAction('status_mobile')}
-                        className="flex-1 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 py-2.5 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition"
-                      >
-                        <Smartphone className="w-4 h-4" /> Đổi sang Mobile Ngay
+                        🔥 Kích Hoạt Chạy Cùng Lúc 2 Cái: Studio PC + Spotify (Novocaine Loop)
                       </button>
                     </div>
                   </div>
@@ -821,9 +830,12 @@ export default function App() {
                     <div className="mt-2 bg-slate-900 p-3.5 rounded-xl border border-slate-800 space-y-1.5 font-mono text-xs">
                       <div><span className="text-slate-500">Name:</span> <span className="text-white">discord-treo-acc</span></div>
                       <div><span className="text-slate-500">Language:</span> <span className="text-emerald-400">Node</span></div>
-                      <div><span className="text-slate-500">Build Command:</span> <span className="text-indigo-300">npm install</span></div>
-                      <div><span className="text-slate-500">Start Command:</span> <span className="text-indigo-300">node index.js</span></div>
+                      <div><span className="text-slate-500">Build Command:</span> <span className="text-indigo-300 font-bold">npm install --legacy-peer-deps</span></div>
+                      <div><span className="text-slate-500">Start Command:</span> <span className="text-indigo-300 font-bold">node index.js</span></div>
                       <div><span className="text-slate-500">Instance Type:</span> <span className="text-emerald-400">Free ($0/tháng)</span></div>
+                    </div>
+                    <div className="mt-2 bg-rose-500/10 border border-rose-500/30 p-2.5 rounded-xl text-rose-300 text-xs">
+                      ⚠️ <strong>Lưu ý quan trọng:</strong> Bắt buộc dùng <code>npm install --legacy-peer-deps</code> ở ô Build Command để tránh lỗi <code>ERESOLVE could not resolve peer dependency</code> của npm trên Render!
                     </div>
                   </li>
                 </ol>

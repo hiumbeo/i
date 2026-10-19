@@ -48,6 +48,25 @@ function appendLog(session: LiveBotSession, type: 'info' | 'success' | 'warn' | 
   }
 }
 
+// Helper to safely broadcast Opcode 3 presence over discord.js-selfbot-v13 WebSocket
+function sendGatewayPresence(client: any, packetData: any) {
+  const packet = {
+    op: 3,
+    d: packetData
+  };
+  try {
+    if (typeof client.ws?.broadcast === 'function') {
+      client.ws.broadcast(packet);
+    } else if (client.ws?.shards && typeof client.ws.shards.first === 'function' && client.ws.shards.first()?.send) {
+      client.ws.shards.first().send(packet);
+    } else if (typeof client.ws?.send === 'function') {
+      client.ws.send(packet);
+    }
+  } catch (err: any) {
+    console.error('sendGatewayPresence error:', err.message);
+  }
+}
+
 // Start live connection
 async function startLiveSession(config: {
   token: string;
@@ -146,9 +165,9 @@ async function startLiveSession(config: {
                 state: config.state || 'Online',
                 timestamps: { start: startTime },
                 assets: {
-                  large_image: '383227221017362442',
+                  large_image: '1359299466493956258', // Verified Live VS Code Icon
                   large_text: 'Visual Studio Code',
-                  small_image: '383227221017362442',
+                  small_image: '1359298971905822881', // Verified Live TS / Idle Badge
                   small_text: 'Verified PC 24/7'
                 }
               },
@@ -163,27 +182,24 @@ async function startLiveSession(config: {
                   start: now,
                   end: end
                 },
-                sync_id: '1u8c2t23kUm497TzpmK0h4',
+                sync_id: '5F0bmCjKUufNz1bHXfgRwe', // Official Spotify Track ID for Novocaine
                 party: {
                   id: `spotify:${client.user.id}`
                 },
                 assets: {
-                  large_image: 'spotify:ab67616d0000b273b0544f07a7837dfd08c5d796',
+                  large_image: 'spotify:ab67616d00001e023cf1c1dbcfa3f1ab7282719b', // Official Spotify Album Cover Hash
                   large_text: 'American Beauty/American Psycho'
                 }
               }
             ];
 
             const osDevice = config.device === 'mobile' ? 'mobile' : 'desktop';
-            client.ws.send({
-              op: 3,
-              d: {
-                since: Date.now(),
-                activities: dualActivities,
-                status: config.status || 'online',
-                afk: false,
-                client_status: { [osDevice]: 'online' }
-              }
+            sendGatewayPresence(client, {
+              since: Date.now(),
+              activities: dualActivities,
+              status: config.status || 'online',
+              afk: false,
+              client_status: { [osDevice]: 'online' }
             });
           };
 
@@ -243,15 +259,12 @@ async function startLiveSession(config: {
             appendLog(session, 'info', `[LỆNH NHẬN DIỆN] Đã gõ lệnh: ${p}status pc`);
             try {
               session.device = 'desktop';
-              client.ws.send({
-                op: 3,
-                d: {
-                  since: Date.now(),
-                  activities: client.user.presence.activities,
-                  status: client.user.presence.status,
-                  afk: false,
-                  client_status: { desktop: 'online' }
-                }
+              sendGatewayPresence(client, {
+                since: Date.now(),
+                activities: client.user.presence.activities,
+                status: client.user.presence.status,
+                afk: false,
+                client_status: { desktop: 'online' }
               });
               await message.reply('💻 **[THÀNH CÔNG]** Đã chuyển sang biểu tượng **PC Desktop (Máy Tính)**!');
               appendLog(session, 'success', 'Đã chuyển sang biểu tượng PC Desktop thành công');
@@ -262,15 +275,12 @@ async function startLiveSession(config: {
             appendLog(session, 'info', `[LỆNH NHẬN DIỆN] Đã gõ lệnh: ${p}status mobile`);
             try {
               session.device = 'mobile';
-              client.ws.send({
-                op: 3,
-                d: {
-                  since: Date.now(),
-                  activities: client.user.presence.activities,
-                  status: client.user.presence.status,
-                  afk: false,
-                  client_status: { mobile: 'online' }
-                }
+              sendGatewayPresence(client, {
+                since: Date.now(),
+                activities: client.user.presence.activities,
+                status: client.user.presence.status,
+                afk: false,
+                client_status: { mobile: 'online' }
               });
               await message.reply('📱 **[THÀNH CÔNG]** Đã chuyển sang biểu tượng **Mobile (Điện Thoại)**!');
               appendLog(session, 'success', 'Đã chuyển sang biểu tượng Mobile thành công');
@@ -466,15 +476,12 @@ app.post('/api/trigger-action', async (req, res) => {
   try {
     if (action === 'status_pc') {
       session.device = 'desktop';
-      client.ws?.send({
-        op: 3,
-        d: {
-          since: Date.now(),
-          activities: client.user.presence.activities,
-          status: client.user.presence.status,
-          afk: false,
-          client_status: { desktop: 'online' }
-        }
+      sendGatewayPresence(client, {
+        since: Date.now(),
+        activities: client.user.presence.activities,
+        status: client.user.presence.status,
+        afk: false,
+        client_status: { desktop: 'online' }
       });
       appendLog(session, 'success', '[WEB UI] Đã kích hoạt chuyển đổi sang icon PC Desktop');
       return res.json({ success: true, message: 'Đã chuyển sang PC Desktop' });
@@ -482,18 +489,64 @@ app.post('/api/trigger-action', async (req, res) => {
 
     if (action === 'status_mobile') {
       session.device = 'mobile';
-      client.ws?.send({
-        op: 3,
-        d: {
-          since: Date.now(),
-          activities: client.user.presence.activities,
-          status: client.user.presence.status,
-          afk: false,
-          client_status: { mobile: 'online' }
-        }
+      sendGatewayPresence(client, {
+        since: Date.now(),
+        activities: client.user.presence.activities,
+        status: client.user.presence.status,
+        afk: false,
+        client_status: { mobile: 'online' }
       });
       appendLog(session, 'success', '[WEB UI] Đã kích hoạt chuyển đổi sang icon Mobile');
       return res.json({ success: true, message: 'Đã chuyển sang Mobile' });
+    }
+
+    if (action === 'dual_spotify_novocaine') {
+      const now = Date.now();
+      const songDuration = 210000;
+      const end = now + songDuration;
+
+      const dualActivities = [
+        {
+          name: 'Visual Studio Code',
+          type: 0,
+          application_id: '383226320970055681',
+          details: 'Treo PC 24/7',
+          state: 'Online',
+          timestamps: { start: session.connectedAt },
+          assets: {
+            large_image: '1359299466493956258', // Verified VS Code
+            large_text: 'Visual Studio Code',
+            small_image: '1359298971905822881',
+            small_text: 'Verified PC 24/7'
+          }
+        },
+        {
+          name: 'Spotify',
+          type: 2,
+          flags: 48,
+          details: 'Novocaine',
+          state: 'Fall Out Boy',
+          timestamps: { start: now, end: end },
+          sync_id: '5F0bmCjKUufNz1bHXfgRwe', // Verified Spotify Track ID
+          party: { id: `spotify:${client.user.id}` },
+          assets: {
+            large_image: 'spotify:ab67616d00001e023cf1c1dbcfa3f1ab7282719b', // Official Spotify Album Cover Hash
+            large_text: 'American Beauty/American Psycho'
+          }
+        }
+      ];
+
+      session.activityName = 'VS Code + Spotify Novocaine';
+      const osDevice = session.device === 'mobile' ? 'mobile' : 'desktop';
+      sendGatewayPresence(client, {
+        since: Date.now(),
+        activities: dualActivities,
+        status: session.status || 'online',
+        afk: false,
+        client_status: { [osDevice]: 'online' }
+      });
+      appendLog(session, 'success', '[WEB UI] Đã kích hoạt chạy cùng lúc 2 cái: VS Code + Spotify Novocaine (Loop hoài)!');
+      return res.json({ success: true, message: 'Đã kích hoạt chế độ kép VS Code + Spotify Novocaine' });
     }
 
     res.status(400).json({ error: 'Hành động không hợp lệ' });
@@ -543,6 +596,18 @@ const client = new Client({
   }
 });
 
+// Safe presence broadcast helper
+function sendPresence(data) {
+  const packet = { op: 3, d: data };
+  if (typeof client.ws.broadcast === 'function') {
+    client.ws.broadcast(packet);
+  } else if (client.ws.shards && client.ws.shards.first()) {
+    client.ws.shards.first().send(packet);
+  } else if (typeof client.ws.send === 'function') {
+    client.ws.send(packet);
+  }
+}
+
 const startTime = Date.now();
 
 function updateDualPresence() {
@@ -560,9 +625,9 @@ function updateDualPresence() {
       state: '${state || 'Online'}',
       timestamps: { start: startTime },
       assets: {
-        large_image: '383227221017362442',
+        large_image: '1359299466493956258', // Verified VS Code
         large_text: 'Visual Studio Code',
-        small_image: '383227221017362442',
+        small_image: '1359298971905822881',
         small_text: 'Verified PC 24/7'
       }
     },
@@ -577,26 +642,23 @@ function updateDualPresence() {
         start: now,
         end: end
       },
-      sync_id: '1u8c2t23kUm497TzpmK0h4',
+      sync_id: '5F0bmCjKUufNz1bHXfgRwe', // Official Spotify Track ID
       party: {
         id: \`spotify:\${client.user.id}\`
       },
       assets: {
-        large_image: 'spotify:ab67616d0000b273b0544f07a7837dfd08c5d796',
+        large_image: 'spotify:ab67616d00001e023cf1c1dbcfa3f1ab7282719b', // Official Spotify Album Cover Hash
         large_text: 'American Beauty/American Psycho'
       }
     }
   ];
 
-  client.ws.send({
-    op: 3,
-    d: {
-      since: Date.now(),
-      activities: activities,
-      status: '${status || 'online'}',
-      afk: false,
-      client_status: { '${deviceType}': 'online' }
-    }
+  sendPresence({
+    since: Date.now(),
+    activities: activities,
+    status: '${status || 'online'}',
+    afk: false,
+    client_status: { '${deviceType}': 'online' }
   });
 }
 
@@ -627,29 +689,23 @@ client.on('messageCreate', async (message) => {
   }
 
   if (content === PREFIX + 'status pc') {
-    client.ws.send({
-      op: 3,
-      d: {
-        since: Date.now(),
-        activities: client.user.presence.activities,
-        status: client.user.presence.status,
-        afk: false,
-        client_status: { desktop: 'online' }
-      }
+    sendPresence({
+      since: Date.now(),
+      activities: client.user.presence.activities,
+      status: client.user.presence.status,
+      afk: false,
+      client_status: { desktop: 'online' }
     });
     await message.reply('💻 **[THÀNH CÔNG]** Đã chuyển sang biểu tượng PC Desktop!');
   }
 
   if (content === PREFIX + 'status mobile') {
-    client.ws.send({
-      op: 3,
-      d: {
-        since: Date.now(),
-        activities: client.user.presence.activities,
-        status: client.user.presence.status,
-        afk: false,
-        client_status: { mobile: 'online' }
-      }
+    sendPresence({
+      since: Date.now(),
+      activities: client.user.presence.activities,
+      status: client.user.presence.status,
+      afk: false,
+      client_status: { mobile: 'online' }
     });
     await message.reply('📱 **[THÀNH CÔNG]** Đã chuyển sang biểu tượng Điện Thoại (Mobile)!');
   }
