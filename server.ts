@@ -567,9 +567,12 @@ app.post('/api/generate-code', (req, res) => {
   const botCode = isSelfbot ? `/**
  * DISCORD 24/7 TREO ACC - PC STATUS & SPOTIFY NOVOCAINE DUAL MODE
  * Ready for hosting on RENDER.COM / VPS / PC 24/7
- */
-require('dotenv').config();
-const http = require('http');
+import http from 'http';
+import dotenv from 'dotenv';
+import { createRequire } from 'module';
+
+dotenv.config();
+const require = createRequire(import.meta.url);
 const { Client } = require('discord.js-selfbot-v13');
 
 const TOKEN = process.env.DISCORD_TOKEN || '${token || 'YOUR_DISCORD_TOKEN_HERE'}';
