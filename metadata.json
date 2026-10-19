@@ -1,0 +1,6 @@
+{
+  "name": "Discord Presence Bot & Status Manager",
+  "description": "Professional Discord bot dashboard for status management, custom rich presence, and token treo emulation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
