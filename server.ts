@@ -33,6 +33,10 @@ interface LiveBotSession {
   ping: number;
   connectedAt: number;
   isRunning: boolean;
+  isStreaming: boolean;
+  streamGuildId?: string;
+  streamChannelId?: string;
+  streamStartTime?: number;
   clientInstance: any;
   logs: { time: string; type: 'info' | 'success' | 'warn' | 'error'; msg: string }[];
 }
@@ -111,6 +115,7 @@ async function startLiveSession(config: {
     ping: 0,
     connectedAt: Date.now(),
     isRunning: true,
+    isStreaming: false,
     clientInstance: null,
     logs: []
   };
@@ -287,6 +292,69 @@ async function startLiveSession(config: {
             } catch (err: any) {
               appendLog(session, 'error', `Lỗi đổi status mobile: ${err.message}`);
             }
+          } else if (content.startsWith(p + 'stream')) {
+            const parts = content.split(/\s+/);
+            const targetChannelId = parts[1];
+            if (!targetChannelId) {
+              await message.reply(`⚠️ **Cách dùng:** \`${p}stream <ID_Kênh_Voice>\`\nVí dụ: \`${p}stream 123456789012345678\``);
+              return;
+            }
+
+            try {
+              const channel = await client.channels.fetch(targetChannelId).catch(() => null);
+              const guildId = channel?.guildId || channel?.guild?.id;
+
+              const streamPayload = {
+                guild_id: guildId || null,
+                channel_id: targetChannelId,
+                self_mute: false,
+                self_deaf: false,
+                self_video: true,
+                self_stream: true
+              };
+
+              if (typeof client.ws.broadcast === 'function') {
+                client.ws.broadcast({ op: 4, d: streamPayload });
+              } else if (client.ws?.shards?.first()) {
+                client.ws.shards.first().send({ op: 4, d: streamPayload });
+              }
+
+              session.isStreaming = true;
+              session.streamChannelId = targetChannelId;
+              session.streamGuildId = guildId || undefined;
+              session.streamStartTime = Date.now();
+
+              appendLog(session, 'success', `[STREAM FARM] Đã bắt đầu stream màn hình vào kênh voice: ${targetChannelId}`);
+              await message.reply(`📺 **[BẮT ĐẦU TREO STREAM]**\n- Đang phát màn hình (Screen Share) vào Voice: \`${targetChannelId}\`\n- Bật sẵn \`self_stream: true\` & \`self_video: true\` để tính giờ cày Badge Streamer (Mốc 1h -> 5000h+)\n- Gõ \`${p}stopstream\` để dừng.`);
+            } catch (err: any) {
+              appendLog(session, 'error', `Lỗi bắt đầu stream: ${err.message}`);
+              await message.reply(`❌ Lỗi bật stream: ${err.message}`);
+            }
+          } else if (content === p + 'stopstream') {
+            try {
+              const leavePayload = {
+                guild_id: session.streamGuildId || null,
+                channel_id: null,
+                self_mute: false,
+                self_deaf: false,
+                self_video: false,
+                self_stream: false
+              };
+
+              if (typeof client.ws.broadcast === 'function') {
+                client.ws.broadcast({ op: 4, d: leavePayload });
+              } else if (client.ws?.shards?.first()) {
+                client.ws.shards.first().send({ op: 4, d: leavePayload });
+              }
+
+              session.isStreaming = false;
+              session.streamStartTime = undefined;
+              appendLog(session, 'warn', '[STREAM FARM] Đã dừng stream và rời kênh voice.');
+              await message.reply('⏹️ **[ĐÃ DỪNG STREAM]** Đã ngắt kết nối stream và rời phòng voice.');
+            } catch (err: any) {
+              appendLog(session, 'error', `Lỗi dừng stream: ${err.message}`);
+              await message.reply(`❌ Lỗi dừng stream: ${err.message}`);
+            }
           } else if (content === p + 'ping') {
             const currentPing = Math.round(client.ws.ping) || 20;
             session.ping = currentPing;
@@ -421,6 +489,9 @@ app.get('/api/live-status', (req, res) => {
     tokenType: session.tokenType,
     uptime: currentUptime,
     ping: session.ping,
+    isStreaming: session.isStreaming,
+    streamChannelId: session.streamChannelId,
+    streamUptime: session.isStreaming && session.streamStartTime ? Math.floor((Date.now() - session.streamStartTime) / 1000) : 0,
     logs: session.logs
   });
 });
@@ -549,10 +620,561 @@ app.post('/api/trigger-action', async (req, res) => {
       return res.json({ success: true, message: 'Đã kích hoạt chế độ kép VS Code + Spotify Novocaine' });
     }
 
+    if (action === 'start_stream') {
+      const channelId = req.body.channelId;
+      if (!channelId) {
+        return res.status(400).json({ error: 'Chưa cung cấp ID phòng Voice để stream!' });
+      }
+
+      try {
+        const channel = await client.channels.fetch(channelId).catch(() => null);
+        const guildId = channel?.guildId || channel?.guild?.id;
+
+        const streamPayload = {
+          guild_id: guildId || null,
+          channel_id: channelId,
+          self_mute: false,
+          self_deaf: false,
+          self_video: true,
+          self_stream: true
+        };
+
+        if (typeof client.ws.broadcast === 'function') {
+          client.ws.broadcast({ op: 4, d: streamPayload });
+        } else if (client.ws?.shards?.first()) {
+          client.ws.shards.first().send({ op: 4, d: streamPayload });
+        }
+
+        session.isStreaming = true;
+        session.streamChannelId = channelId;
+        session.streamGuildId = guildId || undefined;
+        session.streamStartTime = Date.now();
+
+        appendLog(session, 'success', `[WEB UI] Bắt đầu stream màn hình vào kênh voice: ${channelId} để cày Badge 5000h!`);
+        return res.json({ success: true, message: `Đang stream vào voice ${channelId}` });
+      } catch (err: any) {
+        appendLog(session, 'error', `Lỗi bắt đầu stream: ${err.message}`);
+        return res.status(500).json({ error: err.message });
+      }
+    }
+
+    if (action === 'stop_stream') {
+      try {
+        const leavePayload = {
+          guild_id: session.streamGuildId || null,
+          channel_id: null,
+          self_mute: false,
+          self_deaf: false,
+          self_video: false,
+          self_stream: false
+        };
+
+        if (typeof client.ws.broadcast === 'function') {
+          client.ws.broadcast({ op: 4, d: leavePayload });
+        } else if (client.ws?.shards?.first()) {
+          client.ws.shards.first().send({ op: 4, d: leavePayload });
+        }
+
+        session.isStreaming = false;
+        session.streamStartTime = undefined;
+        appendLog(session, 'warn', '[WEB UI] Đã dừng stream và rời kênh voice.');
+        return res.json({ success: true, message: 'Đã dừng stream và rời phòng voice' });
+      } catch (err: any) {
+        appendLog(session, 'error', `Lỗi dừng stream: ${err.message}`);
+        return res.status(500).json({ error: err.message });
+      }
+    }
+
     res.status(400).json({ error: 'Hành động không hợp lệ' });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
+});
+
+// ==========================================
+// DISCORD STREAMING BADGE FARM SYSTEM (1H - 5000H+)
+// ==========================================
+
+const BADGE_TIERS = [
+  { level: 1, hours: 1, label: 'Level 1: Mở Khóa Badge', desc: '1 giờ stream có người xem' },
+  { level: 2, hours: 10, label: 'Level 2: Tập Sự', desc: '10 giờ stream' },
+  { level: 3, hours: 50, label: 'Level 3: Tân Binh', desc: '50 giờ stream' },
+  { level: 4, hours: 100, label: 'Level 4: Thường Niên', desc: '100 giờ stream' },
+  { level: 5, hours: 250, label: 'Level 5: Chuyên Cần', desc: '250 giờ stream' },
+  { level: 6, hours: 500, label: 'Level 6: Bạc (Silver)', desc: '500 giờ stream' },
+  { level: 7, hours: 1000, label: 'Level 7: Vàng (Gold)', desc: '1,000 giờ stream' },
+  { level: 8, hours: 2500, label: 'Level 8: Bạch Kim (Platinum)', desc: '2,500 giờ stream' },
+  { level: 9, hours: 5000, label: 'Level 9: Kim Cương (Full 5000+ Giờ)', desc: '5,000+ giờ - Cấp tối đa' },
+];
+
+function calculateBadgeProgress(totalSeconds: number) {
+  const totalHours = totalSeconds / 3600;
+  let currentTier = { level: 0, hours: 0, label: 'Chưa Đạt Cấp', desc: '0 giờ' };
+  let nextTier = BADGE_TIERS[0];
+
+  for (let i = BADGE_TIERS.length - 1; i >= 0; i--) {
+    if (totalHours >= BADGE_TIERS[i].hours) {
+      currentTier = BADGE_TIERS[i];
+      nextTier = BADGE_TIERS[i + 1] || null as any;
+      break;
+    }
+  }
+
+  let progress = 0;
+  let remainingSeconds = 0;
+  if (!nextTier) {
+    progress = 100;
+  } else {
+    const prevHours = currentTier.hours;
+    const targetHours = nextTier.hours;
+    progress = Math.min(100, Math.max(0, ((totalHours - prevHours) / (targetHours - prevHours)) * 100));
+    remainingSeconds = Math.max(0, (targetHours * 3600) - totalSeconds);
+  }
+
+  return {
+    totalHours: Number(totalHours.toFixed(2)),
+    currentTier,
+    nextTier,
+    progress: Number(progress.toFixed(1)),
+    remainingSeconds
+  };
+}
+
+interface StreamFarmSession {
+  isActive: boolean;
+  channelId: string;
+  guildId?: string;
+  streamerTag?: string;
+  streamerId?: string;
+  streamerAvatar?: string;
+  viewerTag?: string;
+  viewerId?: string;
+  viewerAvatar?: string;
+  hasViewer: boolean;
+  startedAt?: number;
+  totalSeconds: number;
+  streamerClient?: any;
+  viewerClient?: any;
+  intervalTimer?: any;
+  logs: { time: string; type: 'info' | 'success' | 'warn' | 'error'; msg: string }[];
+}
+
+const streamFarmSession: StreamFarmSession = {
+  isActive: false,
+  channelId: '',
+  hasViewer: false,
+  totalSeconds: 0,
+  logs: []
+};
+
+function appendFarmLog(type: 'info' | 'success' | 'warn' | 'error', msg: string) {
+  const time = new Date().toLocaleTimeString('vi-VN');
+  streamFarmSession.logs.unshift({ time, type, msg });
+  if (streamFarmSession.logs.length > 200) {
+    streamFarmSession.logs.pop();
+  }
+}
+
+function stopStreamFarm() {
+  if (streamFarmSession.intervalTimer) {
+    clearInterval(streamFarmSession.intervalTimer);
+    streamFarmSession.intervalTimer = null;
+  }
+  if (streamFarmSession.streamerClient) {
+    try {
+      const leavePayload = {
+        guild_id: streamFarmSession.guildId || null,
+        channel_id: null,
+        self_mute: false,
+        self_deaf: false,
+        self_video: false,
+        self_stream: false
+      };
+      if (typeof streamFarmSession.streamerClient.ws?.broadcast === 'function') {
+        streamFarmSession.streamerClient.ws.broadcast({ op: 4, d: leavePayload });
+      }
+      streamFarmSession.streamerClient.destroy();
+    } catch {}
+    streamFarmSession.streamerClient = null;
+  }
+  if (streamFarmSession.viewerClient) {
+    try {
+      const leavePayload = {
+        guild_id: streamFarmSession.guildId || null,
+        channel_id: null,
+        self_mute: false,
+        self_deaf: false,
+        self_video: false,
+        self_stream: false
+      };
+      if (typeof streamFarmSession.viewerClient.ws?.broadcast === 'function') {
+        streamFarmSession.viewerClient.ws.broadcast({ op: 4, d: leavePayload });
+      }
+      streamFarmSession.viewerClient.destroy();
+    } catch {}
+    streamFarmSession.viewerClient = null;
+  }
+  streamFarmSession.isActive = false;
+  appendFarmLog('warn', 'Đã dừng phiên cày Stream Badge và rời phòng voice.');
+}
+
+async function startStreamFarm(config: {
+  streamerToken: string;
+  viewerToken?: string;
+  channelId: string;
+}): Promise<{ success: boolean; error?: string }> {
+  stopStreamFarm();
+
+  const cleanStreamerToken = config.streamerToken.trim().replace(/^"|"$/g, '');
+  const cleanViewerToken = config.viewerToken ? config.viewerToken.trim().replace(/^"|"$/g, '') : '';
+  const channelId = config.channelId.trim();
+
+  if (!cleanStreamerToken) {
+    return { success: false, error: 'Token người stream (Streamer) không được để trống!' };
+  }
+  if (!channelId) {
+    return { success: false, error: 'ID Kênh Voice không được để trống!' };
+  }
+
+  streamFarmSession.channelId = channelId;
+  streamFarmSession.hasViewer = Boolean(cleanViewerToken);
+  appendFarmLog('info', `Đang kết nối Streamer tới Voice Channel: ${channelId}...`);
+
+  return new Promise((resolve) => {
+    let resolved = false;
+
+    try {
+      const streamer = new SelfClient({
+        checkUpdate: false,
+        ws: {
+          properties: {
+            os: 'Windows',
+            browser: 'Discord Client',
+            device: 'desktop'
+          }
+        }
+      });
+      streamFarmSession.streamerClient = streamer;
+
+      streamer.once('ready', async () => {
+        streamFarmSession.streamerTag = streamer.user.tag;
+        streamFarmSession.streamerId = streamer.user.id;
+        streamFarmSession.streamerAvatar = streamer.user.displayAvatarURL() || 'https://cdn.discordapp.com/embed/avatars/0.png';
+
+        appendFarmLog('success', `[STREAMER] Đã đăng nhập: ${streamer.user.tag}`);
+
+        // Fetch channel to get guildId
+        let guildId: string | null = null;
+        try {
+          const ch = await streamer.channels.fetch(channelId).catch(() => null);
+          guildId = ch?.guildId || ch?.guild?.id || null;
+          streamFarmSession.guildId = guildId || undefined;
+        } catch {}
+
+        // Send Opcode 4 Go Live / Screen share
+        const streamPayload = {
+          guild_id: guildId,
+          channel_id: channelId,
+          self_mute: false,
+          self_deaf: false,
+          self_video: true,
+          self_stream: true
+        };
+
+        if (typeof streamer.ws.broadcast === 'function') {
+          streamer.ws.broadcast({ op: 4, d: streamPayload });
+        } else if (streamer.ws?.shards?.first()) {
+          streamer.ws.shards.first().send({ op: 4, d: streamPayload });
+        }
+
+        // Set rich presence streaming activity
+        sendGatewayPresence(streamer, {
+          since: Date.now(),
+          activities: [{
+            name: 'Screen Share 24/7 (Badge Farm)',
+            type: 1, // Streaming
+            url: 'https://twitch.tv/discord',
+            details: 'Cày Huy Hiệu Streamer (5000+ Giờ)',
+            state: 'Đang phát màn hình trong Voice'
+          }],
+          status: 'online',
+          afk: false,
+          client_status: { desktop: 'online' }
+        });
+
+        appendFarmLog('success', `[STREAMER] Đã kích hoạt GO LIVE trong kênh voice: ${channelId}`);
+
+        // If viewer token is provided, connect viewer
+        if (cleanViewerToken) {
+          appendFarmLog('info', '[VIEWER] Đang kết nối tài khoản người xem (Viewer Bot)...');
+          const viewer = new SelfClient({
+            checkUpdate: false,
+            ws: {
+              properties: {
+                os: 'Windows',
+                browser: 'Discord Client',
+                device: 'desktop'
+              }
+            }
+          });
+          streamFarmSession.viewerClient = viewer;
+
+          viewer.once('ready', async () => {
+            streamFarmSession.viewerTag = viewer.user.tag;
+            streamFarmSession.viewerId = viewer.user.id;
+            streamFarmSession.viewerAvatar = viewer.user.displayAvatarURL() || 'https://cdn.discordapp.com/embed/avatars/1.png';
+
+            appendFarmLog('success', `[VIEWER] Đã đăng nhập: ${viewer.user.tag}`);
+
+            // Join the exact same channel
+            const viewerPayload = {
+              guild_id: guildId,
+              channel_id: channelId,
+              self_mute: true,
+              self_deaf: false,
+              self_video: false,
+              self_stream: false
+            };
+
+            if (typeof viewer.ws.broadcast === 'function') {
+              viewer.ws.broadcast({ op: 4, d: viewerPayload });
+            } else if (viewer.ws?.shards?.first()) {
+              viewer.ws.shards.first().send({ op: 4, d: viewerPayload });
+            }
+
+            appendFarmLog('success', `[VIEWER] Đã vào phòng voice ${channelId} và đang xem stream! Giờ cày badge bắt đầu được Discord tính!`);
+          });
+
+          viewer.login(cleanViewerToken).catch((err: any) => {
+            appendFarmLog('error', `[VIEWER] Đăng nhập tài khoản xem thất bại: ${err.message}`);
+          });
+        } else {
+          appendFarmLog('warn', '[LƯU Ý] Chưa có token Viewer. Hãy đảm bảo bạn hoặc ai đó vào phòng voice xem stream thì Discord mới tính giờ!');
+        }
+
+        streamFarmSession.isActive = true;
+        streamFarmSession.startedAt = Date.now();
+
+        // Interval to track seconds and refresh voice keep-alive every 2 mins
+        let counter = 0;
+        streamFarmSession.intervalTimer = setInterval(() => {
+          if (!streamFarmSession.isActive) return;
+          streamFarmSession.totalSeconds += 1;
+          counter += 1;
+
+          if (counter % 120 === 0 && streamFarmSession.streamerClient) {
+            // Re-send stream packet keep-alive
+            const keepAlivePayload = {
+              guild_id: streamFarmSession.guildId || null,
+              channel_id: streamFarmSession.channelId,
+              self_mute: false,
+              self_deaf: false,
+              self_video: true,
+              self_stream: true
+            };
+            if (typeof streamFarmSession.streamerClient.ws?.broadcast === 'function') {
+              streamFarmSession.streamerClient.ws.broadcast({ op: 4, d: keepAlivePayload });
+            }
+          }
+        }, 1000);
+
+        if (!resolved) {
+          resolved = true;
+          resolve({ success: true });
+        }
+      });
+
+      streamer.login(cleanStreamerToken).catch((err: any) => {
+        appendFarmLog('error', `[STREAMER] Đăng nhập thất bại: ${err.message}`);
+        if (!resolved) {
+          resolved = true;
+          resolve({ success: false, error: `Token Streamer lỗi: ${err.message}` });
+        }
+      });
+
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true;
+          if (streamFarmSession.isActive) {
+            resolve({ success: true });
+          } else {
+            resolve({ success: false, error: 'Hết thời gian chờ kết nối Discord (15s).' });
+          }
+        }
+      }, 15000);
+
+    } catch (err: any) {
+      appendFarmLog('error', `Lỗi: ${err.message}`);
+      if (!resolved) {
+        resolved = true;
+        resolve({ success: false, error: err.message });
+      }
+    }
+  });
+}
+
+// Stream Farm Status API
+app.get('/api/stream-farm/status', (req, res) => {
+  const badgeInfo = calculateBadgeProgress(streamFarmSession.totalSeconds);
+  res.json({
+    isActive: streamFarmSession.isActive,
+    channelId: streamFarmSession.channelId,
+    hasViewer: streamFarmSession.hasViewer,
+    streamer: streamFarmSession.streamerTag ? {
+      tag: streamFarmSession.streamerTag,
+      id: streamFarmSession.streamerId,
+      avatar: streamFarmSession.streamerAvatar
+    } : null,
+    viewer: streamFarmSession.viewerTag ? {
+      tag: streamFarmSession.viewerTag,
+      id: streamFarmSession.viewerId,
+      avatar: streamFarmSession.viewerAvatar
+    } : null,
+    startedAt: streamFarmSession.startedAt,
+    totalSeconds: streamFarmSession.totalSeconds,
+    badgeProgress: badgeInfo,
+    allTiers: BADGE_TIERS,
+    logs: streamFarmSession.logs
+  });
+});
+
+app.post('/api/stream-farm/start', async (req, res) => {
+  const { streamerToken, viewerToken, channelId } = req.body;
+  const targetStreamerToken = streamerToken || process.env.DISCORD_TOKEN;
+  const targetViewerToken = viewerToken || process.env.VIEWER_DISCORD_TOKEN;
+  const targetChannelId = channelId || process.env.STREAM_VOICE_CHANNEL_ID;
+
+  if (!targetStreamerToken) {
+    return res.status(400).json({ success: false, error: 'Chưa có Token người stream!' });
+  }
+  if (!targetChannelId) {
+    return res.status(400).json({ success: false, error: 'Chưa cung cấp ID Kênh Voice!' });
+  }
+
+  const result = await startStreamFarm({
+    streamerToken: targetStreamerToken,
+    viewerToken: targetViewerToken,
+    channelId: targetChannelId
+  });
+
+  res.json(result);
+});
+
+app.post('/api/stream-farm/stop', (req, res) => {
+  stopStreamFarm();
+  res.json({ success: true, message: 'Đã dừng cày stream badge thành công.' });
+});
+
+// Standalone runner script exporter for Stream Badge Farm
+app.get('/api/stream-farm/export-script', (req, res) => {
+  const scriptContent = `/**
+ * DISCORD STREAMING BADGE FARMER (1H -> 5000H+ MAX TIER)
+ * Tự động treo phát stream màn hình trong Voice Channel
+ * Có kèm chế độ tự động cho 1 Acc phụ vào xem để Discord tính giờ 24/7!
+ */
+import dotenv from 'dotenv';
+import { createRequire } from 'module';
+
+dotenv.config();
+const require = createRequire(import.meta.url);
+const { Client } = require('discord.js-selfbot-v13');
+
+const STREAMER_TOKEN = process.env.DISCORD_TOKEN;
+const VIEWER_TOKEN = process.env.VIEWER_DISCORD_TOKEN || '';
+const VOICE_CHANNEL_ID = process.env.STREAM_VOICE_CHANNEL_ID;
+
+if (!STREAMER_TOKEN || !VOICE_CHANNEL_ID) {
+  console.error('[LỖI] Cần thiết lập biến DISCORD_TOKEN và STREAM_VOICE_CHANNEL_ID trong .env!');
+  process.exit(1);
+}
+
+const streamer = new Client({
+  checkUpdate: false,
+  ws: { properties: { os: 'Windows', browser: 'Discord Client', device: 'desktop' } }
+});
+
+streamer.once('ready', async () => {
+  console.log(\`[STREAMER] Đăng nhập thành công: \${streamer.user.tag}\`);
+
+  let guildId = null;
+  try {
+    const ch = await streamer.channels.fetch(VOICE_CHANNEL_ID);
+    guildId = ch?.guildId || ch?.guild?.id;
+  } catch (e) {
+    console.error('[STREAMER] Không lấy được guild ID:', e.message);
+  }
+
+  // Bật Go Live Stream
+  const streamPayload = {
+    guild_id: guildId,
+    channel_id: VOICE_CHANNEL_ID,
+    self_mute: false,
+    self_deaf: false,
+    self_video: true,
+    self_stream: true
+  };
+
+  if (typeof streamer.ws.broadcast === 'function') {
+    streamer.ws.broadcast({ op: 4, d: streamPayload });
+  } else if (streamer.ws?.shards?.first()) {
+    streamer.ws.shards.first().send({ op: 4, d: streamPayload });
+  }
+
+  console.log(\`[STREAMER] >>> ĐANG PHÁT MÀN HÌNH TẠI KÊNH VOICE: \${VOICE_CHANNEL_ID} <<<\`);
+  console.log('[STREAMER] Đang tích lũy giờ cày badge...');
+
+  // Giữ kết nối liên tục
+  setInterval(() => {
+    if (typeof streamer.ws.broadcast === 'function') {
+      streamer.ws.broadcast({ op: 4, d: streamPayload });
+    }
+  }, 120000);
+});
+
+// Khởi chạy Viewer nếu có token phụ
+if (VIEWER_TOKEN) {
+  const viewer = new Client({
+    checkUpdate: false,
+    ws: { properties: { os: 'Windows', browser: 'Discord Client', device: 'desktop' } }
+  });
+
+  viewer.once('ready', async () => {
+    console.log(\`[VIEWER] Đăng nhập thành công acc xem: \${viewer.user.tag}\`);
+
+    let guildId = null;
+    try {
+      const ch = await viewer.channels.fetch(VOICE_CHANNEL_ID);
+      guildId = ch?.guildId || ch?.guild?.id;
+    } catch {}
+
+    const viewerPayload = {
+      guild_id: guildId,
+      channel_id: VOICE_CHANNEL_ID,
+      self_mute: true,
+      self_deaf: false,
+      self_video: false,
+      self_stream: false
+    };
+
+    if (typeof viewer.ws.broadcast === 'function') {
+      viewer.ws.broadcast({ op: 4, d: viewerPayload });
+    } else if (viewer.ws?.shards?.first()) {
+      viewer.ws.shards.first().send({ op: 4, d: viewerPayload });
+    }
+
+    console.log('[VIEWER] >>> ĐÃ VÀO PHÒNG XEM STREAM HỘ (Giờ bắt đầu được tính!) <<<');
+  });
+
+  viewer.login(VIEWER_TOKEN);
+} else {
+  console.log('[CHÚ Ý] Không có VIEWER_DISCORD_TOKEN. Hãy cho 1 acc hoặc bạn bè vào phòng xem để tính giờ.');
+}
+
+streamer.login(STREAMER_TOKEN);
+`;
+
+  res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+  res.send(scriptContent);
 });
 
 // Generate turnkey standalone files for running on own computer / VPS
@@ -688,7 +1310,7 @@ client.on('messageCreate', async (message) => {
   const content = message.content.trim();
 
   if (content === PREFIX + 'help') {
-    await message.reply(\`💻 **[DISCORD PC TREO ACC & STATUS]**\\n- \\\`\${PREFIX}status pc\\\` : Đổi icon online sang Máy Tính (PC Desktop)\\n- \\\`\${PREFIX}status mobile\\\` : Đổi icon online sang Điện Thoại (Mobile)\\n- \\\`\${PREFIX}ping\\\` : Xem độ trễ mạng\\n- \\\`\${PREFIX}help\\\` : Hiển thị bảng này\`);
+    await message.reply(\`💻 **[DISCORD PC TREO ACC & STREAM FARM BADGE]**\\n- \\\`\${PREFIX}status pc\\\` : Đổi sang icon Máy Tính (PC)\\n- \\\`\${PREFIX}status mobile\\\` : Đổi sang icon Điện Thoại\\n- \\\`\${PREFIX}stream <ID_Voice>\\\` : Bật phát stream giả lập cày Badge (1h -> 5000h)\\n- \\\`\${PREFIX}stopstream\\\` : Dừng stream và rời phòng voice\\n- \\\`\${PREFIX}ping\\\` : Xem độ trễ mạng\\n- \\\`\${PREFIX}help\\\` : Hiển thị bảng này\`);
   }
 
   if (content === PREFIX + 'status pc') {
@@ -711,6 +1333,46 @@ client.on('messageCreate', async (message) => {
       client_status: { mobile: 'online' }
     });
     await message.reply('📱 **[THÀNH CÔNG]** Đã chuyển sang biểu tượng Điện Thoại (Mobile)!');
+  }
+
+  if (content.startsWith(PREFIX + 'stream')) {
+    const targetChannelId = content.split(/\\s+/)[1];
+    if (!targetChannelId) {
+      return message.reply(\`⚠️ **Cách dùng:** \\\`\${PREFIX}stream <ID_Kênh_Voice>\\\`\\nVí dụ: \\\`\${PREFIX}stream 123456789012345678\\\`\`);
+    }
+    const channel = await client.channels.fetch(targetChannelId).catch(() => null);
+    const guildId = channel?.guildId || channel?.guild?.id;
+    const packet = {
+      guild_id: guildId || null,
+      channel_id: targetChannelId,
+      self_mute: false,
+      self_deaf: false,
+      self_video: true,
+      self_stream: true
+    };
+    if (typeof client.ws.broadcast === 'function') {
+      client.ws.broadcast({ op: 4, d: packet });
+    } else if (client.ws?.shards?.first()) {
+      client.ws.shards.first().send({ op: 4, d: packet });
+    }
+    await message.reply(\`📺 **[BẮT ĐẦU TREO STREAM CÀY BADGE]**\\n- Đang phát màn hình vào Voice: \\\`\${targetChannelId}\\\`\\n- Tự động bật \\\`self_stream: true\\\` & \\\`self_video: true\\\` để cày giờ (Mốc 1h -> 5000h+)\\n- Gõ \\\`\${PREFIX}stopstream\\\` để dừng.\`);
+  }
+
+  if (content === PREFIX + 'stopstream') {
+    const packet = {
+      guild_id: null,
+      channel_id: null,
+      self_mute: false,
+      self_deaf: false,
+      self_video: false,
+      self_stream: false
+    };
+    if (typeof client.ws.broadcast === 'function') {
+      client.ws.broadcast({ op: 4, d: packet });
+    } else if (client.ws?.shards?.first()) {
+      client.ws.shards.first().send({ op: 4, d: packet });
+    }
+    await message.reply('⏹️ **[ĐÃ DỪNG STREAM]** Đã ngắt kết nối stream và rời phòng voice.');
   }
 
   if (content === PREFIX + 'ping') {

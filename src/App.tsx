@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { 
   Bot, Laptop, Smartphone, Play, Square, RefreshCw, Terminal, 
   Copy, Check, ShieldCheck, HelpCircle, Activity, Sparkles, 
-  Code, AlertCircle, ArrowRight, Zap, CheckCircle2, ChevronDown, ChevronUp
+  Code, AlertCircle, ArrowRight, Zap, CheckCircle2, ChevronDown, ChevronUp,
+  Trophy, Tv, Radio, Eye, Users, Flame, Clock, Monitor
 } from 'lucide-react';
 
 interface LiveStatus {
@@ -22,6 +23,32 @@ interface LiveStatus {
   logs: { time: string; type: 'info' | 'success' | 'warn' | 'error'; msg: string }[];
 }
 
+interface BadgeTier {
+  level: number;
+  hours: number;
+  label: string;
+  desc: string;
+}
+
+interface StreamFarmStatus {
+  isActive: boolean;
+  channelId: string;
+  hasViewer: boolean;
+  streamer: { tag: string; id: string; avatar: string } | null;
+  viewer: { tag: string; id: string; avatar: string } | null;
+  startedAt?: number;
+  totalSeconds: number;
+  badgeProgress: {
+    totalHours: number;
+    currentTier: BadgeTier;
+    nextTier: BadgeTier | null;
+    progress: number;
+    remainingSeconds: number;
+  };
+  allTiers: BadgeTier[];
+  logs: { time: string; type: 'info' | 'success' | 'warn' | 'error'; msg: string }[];
+}
+
 export default function App() {
   const [token, setToken] = useState('');
   const [tokenType, setTokenType] = useState<'user' | 'bot'>('user');
@@ -35,7 +62,16 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [showTokenGuide, setShowTokenGuide] = useState(false);
-  const [activeTab, setActiveTab] = useState<'live' | 'export' | 'render' | 'guide'>('live');
+  const [activeTab, setActiveTab] = useState<'live' | 'streambadge' | 'export' | 'render' | 'guide'>('live');
+
+  // Stream Farm State for 5000h Badge
+  const [streamerToken, setStreamerToken] = useState('');
+  const [viewerToken, setViewerToken] = useState('');
+  const [voiceChannelId, setVoiceChannelId] = useState('');
+  const [streamFarmStatus, setStreamFarmStatus] = useState<StreamFarmStatus | null>(null);
+  const [streamLoading, setStreamLoading] = useState(false);
+  const [streamError, setStreamError] = useState('');
+  const [streamScriptCode, setStreamScriptCode] = useState('');
 
   // Export code state
   const [exportData, setExportData] = useState<{ botCode: string; packageJson: string; envFile: string } | null>(null);
@@ -52,9 +88,24 @@ export default function App() {
     }
   };
 
+  // Poll stream farm status
+  const fetchStreamStatus = async () => {
+    try {
+      const res = await fetch('/api/stream-farm/status');
+      const data: StreamFarmStatus = await res.json();
+      setStreamFarmStatus(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   useEffect(() => {
     fetchStatus();
-    const timer = setInterval(fetchStatus, 2000);
+    fetchStreamStatus();
+    const timer = setInterval(() => {
+      fetchStatus();
+      fetchStreamStatus();
+    }, 2000);
     return () => clearInterval(timer);
   }, []);
 
@@ -152,6 +203,67 @@ export default function App() {
     setTimeout(() => setCopiedFile(null), 2000);
   };
 
+  const handleStartStreamFarm = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const effectiveStreamerToken = streamerToken.trim() || token.trim();
+    if (!effectiveStreamerToken) {
+      setStreamError('Vui lòng nhập Token người phát stream (Streamer)!');
+      return;
+    }
+    if (!voiceChannelId.trim()) {
+      setStreamError('Vui lòng nhập ID Kênh Voice (Voice Channel ID)!');
+      return;
+    }
+
+    setStreamLoading(true);
+    setStreamError('');
+
+    try {
+      const res = await fetch('/api/stream-farm/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          streamerToken: effectiveStreamerToken,
+          viewerToken: viewerToken.trim(),
+          channelId: voiceChannelId.trim()
+        })
+      });
+
+      const result = await res.json();
+      if (!result.success) {
+        setStreamError(result.error || 'Khởi chạy Stream Farm thất bại!');
+      } else {
+        fetchStreamStatus();
+      }
+    } catch (err: any) {
+      setStreamError(err.message || 'Lỗi kết nối máy chủ');
+    } finally {
+      setStreamLoading(false);
+    }
+  };
+
+  const handleStopStreamFarm = async () => {
+    setStreamLoading(true);
+    try {
+      await fetch('/api/stream-farm/stop', { method: 'POST' });
+      fetchStreamStatus();
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setStreamLoading(false);
+    }
+  };
+
+  const loadStreamScript = async () => {
+    try {
+      const res = await fetch('/api/stream-farm/export-script');
+      const text = await res.text();
+      setStreamScriptCode(text);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const formatUptime = (secs: number = 0) => {
     const h = Math.floor(secs / 3600);
     const m = Math.floor((secs % 3600) / 60);
@@ -211,7 +323,7 @@ export default function App() {
       </header>
 
       {/* Tabs */}
-      <div className="bg-slate-900/60 border-b border-slate-800 px-6 flex space-x-2">
+      <div className="bg-slate-900/60 border-b border-slate-800 px-6 flex flex-wrap gap-2">
         <button
           onClick={() => setActiveTab('live')}
           className={`flex items-center gap-2 py-3 px-4 text-sm font-medium border-b-2 transition ${
@@ -221,6 +333,16 @@ export default function App() {
           }`}
         >
           <Activity className="w-4 h-4" /> Bảng Điều Khiển Trực Tiếp
+        </button>
+        <button
+          onClick={() => { setActiveTab('streambadge'); loadStreamScript(); }}
+          className={`flex items-center gap-2 py-3 px-4 text-sm font-medium border-b-2 transition ${
+            activeTab === 'streambadge' 
+              ? 'border-amber-500 text-amber-300 bg-amber-500/10' 
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Trophy className="w-4 h-4 text-amber-400" /> 🏆 Cày Huy Hiệu Mới (1h - 5000h+)
         </button>
         <button
           onClick={() => { setActiveTab('export'); loadExportCode(); }}
@@ -622,6 +744,420 @@ export default function App() {
           </div>
         )}
 
+        {/* TAB: CÀY HUY HIỆU STREAMER (1H -> 5000H+) */}
+        {activeTab === 'streambadge' && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            {/* Hero Banner with Badge Preview */}
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950/40 to-slate-900 border border-amber-500/30 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-80 h-80 bg-amber-500/10 rounded-full blur-3xl pointer-events-none" />
+
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                {/* Left Description */}
+                <div className="md:col-span-8 space-y-3">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs font-bold tracking-wide">
+                    <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                    DISCORD STREAMING BADGE AUTO FARMER
+                  </div>
+                  <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                    Tự Động Cày Huy Hiệu Streamer (1h &rarr; 5000+ Giờ)
+                  </h2>
+                  <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+                    Huy hiệu Discord mới theo dõi <strong>tổng số giờ stream màn hình trong kênh Voice</strong>. 
+                    Mở khóa ngay từ mốc <strong>1 giờ</strong> và đạt cấp tối đa tại <strong>5000+ giờ</strong>. 
+                    Hệ thống hỗ trợ cơ chế <strong>Cặp Đôi 2 Acc Tự Động (1 Acc Phát + 1 Acc Phụ Vào Xem Hộ)</strong> để đảm bảo Discord luôn tính giờ 24/7 không bị gián đoạn!
+                  </p>
+
+                  <div className="flex flex-wrap items-center gap-3 pt-2">
+                    <div className="flex items-center gap-2 bg-slate-950/80 px-3.5 py-1.5 rounded-xl border border-slate-800 text-xs font-mono">
+                      <Clock className="w-3.5 h-3.5 text-cyan-400" />
+                      <span className="text-slate-400">Đã tích lũy:</span>
+                      <strong className="text-cyan-300 font-bold">
+                        {streamFarmStatus ? `${streamFarmStatus.badgeProgress.totalHours} giờ` : '0 giờ'}
+                      </strong>
+                    </div>
+                    <div className="flex items-center gap-2 bg-slate-950/80 px-3.5 py-1.5 rounded-xl border border-slate-800 text-xs font-mono">
+                      <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="text-slate-400">Cấp hiện tại:</span>
+                      <strong className="text-amber-300 font-bold">
+                        {streamFarmStatus?.badgeProgress?.currentTier?.label || 'Level 0 (Chưa mở)'}
+                      </strong>
+                    </div>
+                    <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold border flex items-center gap-1.5 ${
+                      streamFarmStatus?.isActive 
+                        ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' 
+                        : 'bg-slate-800 text-slate-400 border-slate-700'
+                    }`}>
+                      <span className={`w-2 h-2 rounded-full ${streamFarmStatus?.isActive ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
+                      {streamFarmStatus?.isActive ? 'ĐANG PHÁT & CÀY GIỜ 24/7' : 'ĐANG DỪNG'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Right Authentic Badge Card */}
+                <div className="md:col-span-4 flex flex-col items-center justify-center">
+                  <div className="relative group">
+                    <div className="absolute -inset-1 bg-gradient-to-r from-amber-500 via-cyan-500 to-indigo-500 rounded-3xl blur opacity-40 group-hover:opacity-75 transition duration-500" />
+                    <div className="relative bg-slate-950 border border-slate-800 rounded-2xl p-4 flex flex-col items-center text-center shadow-xl">
+                      <div className="w-24 h-24 rounded-2xl bg-slate-900 border border-slate-700/80 flex items-center justify-center p-2 mb-3 relative overflow-hidden shadow-inner">
+                        <img 
+                          src="/assets/aistudio/Screenshot_20261021_050517_Discord_1d872617.jpg" 
+                          alt="Discord Streaming Badge" 
+                          className="w-full h-full object-contain drop-shadow-[0_0_12px_rgba(56,189,248,0.5)]"
+                        />
+                      </div>
+                      <div className="text-xs font-bold text-white tracking-wide">HUY HIỆU STREAMER CHÍNH THỨC</div>
+                      <div className="text-[11px] text-amber-400 font-mono mt-0.5 font-semibold">Màn Hình Máy Tính Cổ (CRT Monitor)</div>
+                      <div className="text-[10px] text-slate-500 mt-1">Cấp độ 1h &rarr; 5000+ Giờ</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Live Progress Bar & Roadmap */}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-amber-400" />
+                    Tiến Trình Cày Huy Hiệu (Milestone Roadmap)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    {streamFarmStatus?.badgeProgress?.nextTier 
+                      ? `Mốc kế tiếp: ${streamFarmStatus.badgeProgress.nextTier.label} (${streamFarmStatus.badgeProgress.nextTier.hours}h) - Còn thiếu ${(streamFarmStatus.badgeProgress.remainingSeconds / 3600).toFixed(1)} giờ nữa`
+                      : 'Đã hoàn thành Cấp Tối Đa (Max Tier 5000+ Giờ)!'}
+                  </p>
+                </div>
+                <div className="font-mono text-xs bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800 text-slate-300">
+                  Thời gian phiên hiện tại: <strong className="text-emerald-400">{formatUptime(streamFarmStatus?.totalSeconds || 0)}</strong>
+                </div>
+              </div>
+
+              {/* Progress Bar */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-mono">
+                  <span className="text-slate-400">Tiến độ lên mốc tiếp theo</span>
+                  <span className="text-cyan-400 font-bold">{streamFarmStatus?.badgeProgress?.progress || 0}%</span>
+                </div>
+                <div className="w-full bg-slate-950 rounded-full h-3 border border-slate-800 overflow-hidden p-0.5">
+                  <div 
+                    className="bg-gradient-to-r from-indigo-500 via-cyan-400 to-emerald-400 h-full rounded-full transition-all duration-500 shadow-[0_0_12px_rgba(6,182,212,0.6)]"
+                    style={{ width: `${Math.min(100, streamFarmStatus?.badgeProgress?.progress || 0)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* 9 Tiers Grid */}
+              <div className="grid grid-cols-3 sm:grid-cols-5 lg:grid-cols-9 gap-2 pt-2">
+                {(streamFarmStatus?.allTiers || [
+                  { level: 1, hours: 1, label: 'Level 1', desc: '1 giờ' },
+                  { level: 2, hours: 10, label: 'Level 2', desc: '10 giờ' },
+                  { level: 3, hours: 50, label: 'Level 3', desc: '50 giờ' },
+                  { level: 4, hours: 100, label: 'Level 4', desc: '100 giờ' },
+                  { level: 5, hours: 250, label: 'Level 5', desc: '250 giờ' },
+                  { level: 6, hours: 500, label: 'Level 6', desc: '500 giờ' },
+                  { level: 7, hours: 1000, label: 'Level 7', desc: '1,000h' },
+                  { level: 8, hours: 2500, label: 'Level 8', desc: '2,500h' },
+                  { level: 9, hours: 5000, label: 'Max Level', desc: '5,000h+' },
+                ]).map((t) => {
+                  const isCurrent = streamFarmStatus?.badgeProgress?.currentTier?.level === t.level;
+                  const isPassed = (streamFarmStatus?.badgeProgress?.totalHours || 0) >= t.hours;
+                  return (
+                    <div 
+                      key={t.level}
+                      className={`p-3 rounded-2xl border text-center transition flex flex-col justify-between ${
+                        isCurrent 
+                          ? 'bg-amber-500/20 border-amber-400 shadow-lg shadow-amber-500/20' 
+                          : isPassed 
+                            ? 'bg-emerald-500/10 border-emerald-500/30' 
+                            : 'bg-slate-950 border-slate-800 opacity-60'
+                      }`}
+                    >
+                      <div className="text-[10px] font-bold text-slate-400 uppercase">Lv.{t.level}</div>
+                      <div className={`text-xs font-mono font-bold my-1 ${isCurrent ? 'text-amber-300' : isPassed ? 'text-emerald-400' : 'text-slate-300'}`}>
+                        {t.hours}h
+                      </div>
+                      <div className="text-[9px] text-slate-400 truncate">
+                        {isPassed ? '✓ Đạt' : isCurrent ? '⚡ Đang cày' : 'Chưa'}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Farm Controller: Inputs & Actions */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              
+              {/* Form Input Column (7 cols) */}
+              <div className="lg:col-span-7 bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Radio className="w-5 h-5 text-indigo-400" />
+                    Cấu Hình Phòng Voice & Tài Khoản Cày
+                  </h3>
+                  <span className="text-xs text-indigo-400 bg-indigo-500/10 px-2.5 py-0.5 rounded-full border border-indigo-500/20 font-medium">
+                    Hỗ trợ 1 hoặc 2 Nick
+                  </span>
+                </div>
+
+                {/* Stream Sync & WebRTC Explanation Alert */}
+                <div className="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 text-xs space-y-2 text-amber-200">
+                  <div className="font-bold text-amber-300 text-xs flex items-center gap-1.5 uppercase tracking-wide">
+                    <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+                    Lưu Ý Quan Trọng Về Lỗi "Stream Sync Không Được" / Màn Hình Đen
+                  </div>
+                  <p className="leading-relaxed text-slate-300 text-[11px]">
+                    Khi người khác bấm vào xem stream trên Discord mà bị báo <em>"Không thể đồng bộ stream (Stream sync failed)"</em> hoặc quay vòng vòng: 
+                    Lý do là vì Discord yêu cầu <strong>kết nối luồng dữ liệu Video WebRTC thật</strong> (chuyển các khung hình VP8/H264). Nếu chỉ gửi lệnh giả lập qua Gateway mà không có dữ liệu hình ảnh thật thì Discord không đồng bộ được luồng video.
+                  </p>
+                  <div className="bg-slate-950/80 p-2.5 rounded-xl border border-amber-500/20 text-[11px] text-amber-300 space-y-1">
+                    <div className="font-semibold text-white">💡 MẸO CÀY BADGE 5000H CHUẨN XÁC 100% KHÔNG BAO GIỜ LỖI:</div>
+                    <ul className="list-disc list-inside text-slate-300 space-y-0.5">
+                      <li><strong>Bước 1:</strong> Bạn mở Discord trên máy tính thật, vào phòng voice và bấm <strong>Chia Sẻ Màn Hình (Go Live)</strong> 1 cửa sổ siêu nhẹ (ví dụ cửa sổ Notepad hoặc trình duyệt).</li>
+                      <li><strong>Bước 2:</strong> Dán token <strong>Nick Phụ (Viewer)</strong> vào ô số 2 bên dưới rồi nhấn <strong>🚀 Bắt Đầu</strong>.</li>
+                      <li>👉 Nick phụ sẽ tự động vào phòng voice và ngồi xem stream của bạn 24/24. Discord sẽ ghi nhận 100% số giờ liên tục để bạn mở khóa đủ các mốc Level 1 &rarr; Level 9 (5000+ Giờ)!</li>
+                    </ul>
+                  </div>
+                </div>
+
+                <form onSubmit={handleStartStreamFarm} className="space-y-4">
+                  {/* Streamer Token */}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center justify-between">
+                      <span>1. Token Nick Chính (Streamer - Nhận Huy Hiệu) <span className="text-rose-400">*</span></span>
+                      <span className="text-[10px] text-slate-500">Bắt buộc</span>
+                    </label>
+                    <input
+                      type="password"
+                      value={streamerToken}
+                      onChange={(e) => setStreamerToken(e.target.value)}
+                      placeholder={token ? 'Đang dùng token cấu hình ở tab chính' : 'Dán User Token của tài khoản muốn nhận huy hiệu'}
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 font-mono focus:outline-none focus:border-indigo-500"
+                    />
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      {token && !streamerToken ? '💡 Đã tự động nhận Token từ Tab chính. Nếu muốn cày cho nick khác thì dán vào đây.' : 'Tài khoản này sẽ tự động tham gia Voice và phát Go Live màn hình.'}
+                    </p>
+                  </div>
+
+                  {/* Viewer Token */}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                        2. Token Nick Phụ (Viewer - Vào Xem Hộ)
+                      </span>
+                      <span className="text-[10px] text-emerald-400 font-semibold bg-emerald-500/10 px-1.5 py-0.5 rounded">Khuyên Dùng</span>
+                    </label>
+                    <input
+                      type="password"
+                      value={viewerToken}
+                      onChange={(e) => setViewerToken(e.target.value)}
+                      placeholder="Dán User Token nick clone / acc phụ (tùy chọn)"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 font-mono focus:outline-none focus:border-emerald-500"
+                    />
+                    <div className="bg-emerald-500/10 border border-emerald-500/20 p-2 rounded-xl mt-1.5 text-[11px] text-emerald-300 flex items-start gap-1.5">
+                      <Users className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                      <span>
+                        <strong>Tại sao nên có Nick Phụ?</strong> Discord quy định <em>chỉ tính giờ cày huy hiệu khi có ít nhất 1 người khác cùng ở trong phòng xem stream</em>. Nếu nhập token nick phụ, hệ thống sẽ tự động cho nick phụ vào xem hộ bạn 24/7!
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Voice Channel ID */}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-300 mb-1 flex items-center justify-between">
+                      <span>3. ID Kênh Voice (Voice Channel ID) <span className="text-rose-400">*</span></span>
+                      <span className="text-[10px] text-slate-500">Bắt buộc</span>
+                    </label>
+                    <input
+                      type="text"
+                      value={voiceChannelId}
+                      onChange={(e) => setVoiceChannelId(e.target.value)}
+                      placeholder="Ví dụ: 123456789012345678"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-slate-600 font-mono focus:outline-none focus:border-indigo-500"
+                    />
+                    <p className="text-[11px] text-slate-400 mt-1">
+                      👉 <strong>Cách lấy ID phòng Voice:</strong> Bật <em>Cài đặt Discord &gt; Nâng cao &gt; Bật Chế độ nhà phát triển (Developer Mode)</em> &gt; Chuột phải vào Kênh Voice bất kỳ &gt; Chọn <strong>Sao chép ID Kênh</strong>.
+                    </p>
+                  </div>
+
+                  {streamError && (
+                    <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-3 text-xs text-rose-300 flex items-start gap-2">
+                      <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                      <div>{streamError}</div>
+                    </div>
+                  )}
+
+                  {/* Control Buttons */}
+                  <div className="pt-2 flex items-center gap-3">
+                    {!streamFarmStatus?.isActive ? (
+                      <button
+                        type="submit"
+                        disabled={streamLoading}
+                        className="flex-1 bg-gradient-to-r from-amber-600 via-orange-600 to-amber-600 hover:from-amber-500 hover:to-orange-500 disabled:opacity-50 text-white font-bold py-3 px-4 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-amber-600/30 transition uppercase tracking-wide"
+                      >
+                        <Play className="w-4 h-4 fill-current" />
+                        <span>{streamLoading ? 'Đang kết nối Discord...' : '🚀 BẮT ĐẦU CÀY BADGE TRÊN WEB (LIVE)'}</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleStopStreamFarm}
+                        disabled={streamLoading}
+                        className="flex-1 bg-rose-600 hover:bg-rose-500 disabled:opacity-50 text-white font-bold py-3 px-4 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-600/30 transition uppercase tracking-wide"
+                      >
+                        <Square className="w-4 h-4 fill-current" />
+                        <span>{streamLoading ? 'Đang ngắt kết nối...' : '⏹️ DỪNG STREAM & RỜI PHÒNG'}</span>
+                      </button>
+                    )}
+                  </div>
+                </form>
+              </div>
+
+              {/* Status & Terminal Logs (5 cols) */}
+              <div className="lg:col-span-5 space-y-4">
+                
+                {/* Active Connected Users */}
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl space-y-3">
+                  <h4 className="text-xs font-bold text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <Monitor className="w-4 h-4 text-cyan-400" />
+                    Trạng Thái Phòng Voice Hiện Tại
+                  </h4>
+
+                  {/* Streamer Account Info */}
+                  <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 flex items-center gap-3">
+                    <img 
+                      src={streamFarmStatus?.streamer?.avatar || 'https://cdn.discordapp.com/embed/avatars/0.png'} 
+                      alt="Streamer" 
+                      className="w-10 h-10 rounded-full border border-amber-500/40"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-white truncate">
+                          {streamFarmStatus?.streamer?.tag || 'Chưa kết nối Streamer'}
+                        </span>
+                        <span className="text-[10px] bg-amber-500/20 text-amber-400 px-1.5 rounded font-mono">Streamer</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 truncate mt-0.5">
+                        {streamFarmStatus?.isActive ? '📺 Đang phát Go Live trong Voice' : 'Chưa hoạt động'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Viewer Account Info */}
+                  <div className="bg-slate-950 p-3 rounded-2xl border border-slate-800 flex items-center gap-3">
+                    <img 
+                      src={streamFarmStatus?.viewer?.avatar || 'https://cdn.discordapp.com/embed/avatars/1.png'} 
+                      alt="Viewer" 
+                      className="w-10 h-10 rounded-full border border-emerald-500/40"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-xs font-bold text-white truncate">
+                          {streamFarmStatus?.viewer?.tag || (streamFarmStatus?.hasViewer ? 'Đang vào...' : 'Chưa có nick xem')}
+                        </span>
+                        <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-1.5 rounded font-mono">Viewer</span>
+                      </div>
+                      <div className="text-[11px] text-slate-400 truncate mt-0.5">
+                        {streamFarmStatus?.viewer?.tag 
+                          ? '👀 Đang ngồi xem stream hộ (Đang tính giờ)' 
+                          : 'Cần ít nhất 1 người xem để Discord tính giờ!'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Console Log */}
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-5 shadow-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-white flex items-center gap-1.5 font-mono">
+                      <Terminal className="w-3.5 h-3.5 text-cyan-400" /> Live Stream Farm Logs
+                    </span>
+                    <span className="text-[10px] text-emerald-400 font-mono">Real-time</span>
+                  </div>
+
+                  <div className="bg-slate-950 rounded-2xl p-3 font-mono text-[11px] text-slate-300 h-48 overflow-y-auto border border-slate-800/80 space-y-1">
+                    {streamFarmStatus?.logs && streamFarmStatus.logs.length > 0 ? (
+                      streamFarmStatus.logs.map((l, idx) => (
+                        <div key={idx} className="flex items-start gap-1.5 pb-0.5">
+                          <span className="text-slate-600 shrink-0">[{l.time}]</span>
+                          <span className={`px-1 rounded text-[9px] font-bold uppercase shrink-0 ${
+                            l.type === 'success' ? 'bg-emerald-500/20 text-emerald-400' :
+                            l.type === 'error' ? 'bg-rose-500/20 text-rose-400' :
+                            l.type === 'warn' ? 'bg-amber-500/20 text-amber-400' : 'bg-cyan-500/20 text-cyan-400'
+                          }`}>
+                            {l.type}
+                          </span>
+                          <span className="text-slate-200 break-all">{l.msg}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-slate-600 text-center py-8">Chưa có nhật ký cày stream.</div>
+                    )}
+                  </div>
+                </div>
+
+              </div>
+
+            </div>
+
+            {/* Render.com 24/7 Hosting Guide for Badge Farming */}
+            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2">
+                  <Zap className="w-5 h-5 text-amber-400" />
+                  <h3 className="text-base font-bold text-white">Cách Treo Cày Badge 24/7 Vĩnh Viễn Trên Render.com (Miễn Phí)</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleCopy(streamScriptCode || 'node index.js', 'farm-script');
+                  }}
+                  className="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-3 py-1.5 rounded-xl flex items-center gap-1.5 transition"
+                >
+                  {copiedFile === 'farm-script' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  {copiedFile === 'farm-script' ? 'Đã copy script!' : 'Copy Script stream-farm.js'}
+                </button>
+              </div>
+
+              <p className="text-xs text-slate-300">
+                Để cày đủ <strong>5,000+ giờ</strong> (mất khoảng vài tháng treo liên tục), bạn không nên bật máy tính cả ngày lẫn đêm tốn điện. 
+                Hãy triển khai thẳng lên <strong>Render.com</strong> với 3 biến môi trường sau:
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 font-mono text-xs space-y-1">
+                  <div className="text-slate-500">Biến 1 (Bắt buộc):</div>
+                  <div className="text-amber-300 font-bold">DISCORD_TOKEN</div>
+                  <div className="text-slate-400 text-[11px]">User Token nick chính muốn nhận huy hiệu</div>
+                </div>
+                <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 font-mono text-xs space-y-1">
+                  <div className="text-slate-500">Biến 2 (Bắt buộc):</div>
+                  <div className="text-cyan-300 font-bold">STREAM_VOICE_CHANNEL_ID</div>
+                  <div className="text-slate-400 text-[11px]">ID phòng Voice mà bạn muốn nick vào stream</div>
+                </div>
+                <div className="bg-slate-950 p-3.5 rounded-2xl border border-slate-800 font-mono text-xs space-y-1">
+                  <div className="text-slate-500">Biến 3 (Khuyên dùng):</div>
+                  <div className="text-emerald-300 font-bold">VIEWER_DISCORD_TOKEN</div>
+                  <div className="text-slate-400 text-[11px]">Token nick clone để tự vào xem hộ 24/7</div>
+                </div>
+              </div>
+
+              <div className="bg-slate-950 p-4 rounded-2xl border border-slate-800 text-xs text-slate-300 space-y-2">
+                <p className="font-semibold text-white">Các bước thực hiện trên Render.com:</p>
+                <ol className="list-decimal list-inside space-y-1 text-slate-400">
+                  <li>Vào <strong>Render.com &gt; Dashboard &gt; Web Service</strong> bạn đã tạo trước đó.</li>
+                  <li>Bấm vào tab <strong>Environment</strong> ở menu bên trái.</li>
+                  <li>Thêm 2 biến: <code>STREAM_VOICE_CHANNEL_ID</code> (ID phòng voice) và <code>VIEWER_DISCORD_TOKEN</code> (token nick phụ).</li>
+                  <li>Bấm <strong>Save Changes</strong> &gt; Render sẽ tự động redeploy và bắt đầu phát stream cày badge 24/7!</li>
+                </ol>
+              </div>
+            </div>
+
+          </div>
+        )}
+
         {/* TAB 2: EXPORT STANDALONE SCRIPT */}
         {activeTab === 'export' && (
           <div className="space-y-6">
@@ -850,12 +1386,32 @@ export default function App() {
                 <p className="text-xs text-slate-400">
                   Kéo xuống phần <strong>Environment Variables</strong> trên Render và thêm biến:
                 </p>
-                <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 font-mono text-xs flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <span className="text-amber-300 font-bold">Key:</span> <code className="text-white">DISCORD_TOKEN</code>
+                <div className="space-y-2">
+                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 font-mono text-xs flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="text-amber-300 font-bold">Key (Treo Nick):</span> <code className="text-white">DISCORD_TOKEN</code>
+                    </div>
+                    <div>
+                      <span className="text-emerald-400 font-bold">Value:</span> <code className="text-slate-300">{token ? (token.substring(0, 8) + '••••••••••') : 'Dán Discord Token của bạn'}</code>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-emerald-400 font-bold">Value:</span> <code className="text-slate-300">{token ? (token.substring(0, 8) + '••••••••••') : 'Dán Discord Token của bạn'}</code>
+
+                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 font-mono text-xs flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="text-cyan-300 font-bold">Key (Cày Badge 5000h):</span> <code className="text-white">STREAM_VOICE_CHANNEL_ID</code>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 font-bold">Value:</span> <code className="text-slate-300">ID kênh voice (ví dụ: 123456789...)</code>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-900 p-3.5 rounded-xl border border-slate-800 font-mono text-xs flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="text-emerald-300 font-bold">Key (Acc Phụ Xem Hộ):</span> <code className="text-white">VIEWER_DISCORD_TOKEN</code>
+                    </div>
+                    <div>
+                      <span className="text-slate-400 font-bold">Value:</span> <code className="text-slate-300">Token nick clone (để tự vào xem hộ tính giờ)</code>
+                    </div>
                   </div>
                 </div>
                 <p className="text-xs text-slate-400">

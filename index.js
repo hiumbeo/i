@@ -124,6 +124,71 @@ client.on('ready', async () => {
     updateDualPresence();
     console.log('[Loop] Đã reset lại bài hát Novocaine từ 00:00');
   }, 210000);
+
+  // Tự động vào voice và stream nếu cấu hình STREAM_VOICE_CHANNEL_ID trên Render
+  const streamChannel = process.env.STREAM_VOICE_CHANNEL_ID;
+  if (streamChannel) {
+    try {
+      const channel = await client.channels.fetch(streamChannel).catch(() => null);
+      const guildId = channel?.guildId || channel?.guild?.id;
+      const packet = {
+        guild_id: guildId || null,
+        channel_id: streamChannel,
+        self_mute: false,
+        self_deaf: false,
+        self_video: true,
+        self_stream: true
+      };
+      if (typeof client.ws.broadcast === 'function') {
+        client.ws.broadcast({ op: 4, d: packet });
+      } else if (client.ws?.shards?.first()) {
+        client.ws.shards.first().send({ op: 4, d: packet });
+      }
+      console.log(` [AUTO STREAM] Đã tự động tham gia Voice ${streamChannel} và phát stream để cày Badge 5000h!`);
+
+      // Refresh voice keep-alive every 2 mins
+      setInterval(() => {
+        if (typeof client.ws.broadcast === 'function') {
+          client.ws.broadcast({ op: 4, d: packet });
+        }
+      }, 120000);
+    } catch (e) {
+      console.error('[STREAM ERROR]', e.message);
+    }
+
+    // Tự động khởi chạy tài khoản Viewer (Clone) nếu có VIEWER_DISCORD_TOKEN
+    const viewerToken = process.env.VIEWER_DISCORD_TOKEN;
+    if (viewerToken) {
+      try {
+        const viewer = new Client({
+          checkUpdate: false,
+          ws: { properties: { os: 'Windows', browser: 'Discord Client', device: 'desktop' } }
+        });
+        viewer.once('ready', async () => {
+          console.log(` [VIEWER AUTO] Đã đăng nhập viewer: ${viewer.user.tag}`);
+          const ch = await viewer.channels.fetch(streamChannel).catch(() => null);
+          const gId = ch?.guildId || ch?.guild?.id;
+          const vPacket = {
+            guild_id: gId || null,
+            channel_id: streamChannel,
+            self_mute: true,
+            self_deaf: false,
+            self_video: false,
+            self_stream: false
+          };
+          if (typeof viewer.ws.broadcast === 'function') {
+            viewer.ws.broadcast({ op: 4, d: vPacket });
+          } else if (viewer.ws?.shards?.first()) {
+            viewer.ws.shards.first().send({ op: 4, d: vPacket });
+          }
+          console.log(` [VIEWER AUTO] Đã vào voice ${streamChannel} xem stream hộ 24/7! Giờ cày badge bắt đầu tính!`);
+        });
+        viewer.login(viewerToken).catch((err) => console.error('[VIEWER LOGIN ERROR]', err.message));
+      } catch (ve) {
+        console.error('[VIEWER ERROR]', ve.message);
+      }
+    }
+  }
 });
 
 // Nhận lệnh Discord
@@ -132,7 +197,7 @@ client.on('messageCreate', async (message) => {
   const content = message.content.trim();
 
   if (content === PREFIX + 'help') {
-    await message.reply(`💻 **[DISCORD PC TREO ACC & STATUS]**\n- \`${PREFIX}status pc\` : Đổi sang icon Máy Tính (PC)\n- \`${PREFIX}status mobile\` : Đổi sang icon Điện Thoại\n- \`${PREFIX}ping\` : Xem độ trễ\n- \`${PREFIX}help\` : Hiển thị bảng này`);
+    await message.reply(`💻 **[DISCORD PC TREO ACC & STREAM FARM BADGE]**\n- \`${PREFIX}status pc\` : Đổi sang icon Máy Tính (PC)\n- \`${PREFIX}status mobile\` : Đổi sang icon Điện Thoại\n- \`${PREFIX}stream <ID_Voice>\` : Bật phát stream giả lập cày Badge (1h -> 5000h)\n- \`${PREFIX}stopstream\` : Dừng stream và rời phòng voice\n- \`${PREFIX}ping\` : Xem độ trễ\n- \`${PREFIX}help\` : Hiển thị bảng này`);
   } else if (content === PREFIX + 'status pc') {
     sendPresence({
       since: Date.now(),
@@ -151,6 +216,44 @@ client.on('messageCreate', async (message) => {
       client_status: { mobile: 'online' }
     });
     await message.reply('📱 **[THÀNH CÔNG]** Đã chuyển sang biểu tượng Điện Thoại (Mobile)!');
+  } else if (content.startsWith(PREFIX + 'stream')) {
+    const targetChannelId = content.split(/\s+/)[1];
+    if (!targetChannelId) {
+      return message.reply(`⚠️ **Cách dùng:** \`${PREFIX}stream <ID_Kênh_Voice>\`\nVí dụ: \`${PREFIX}stream 123456789012345678\``);
+    }
+    const channel = await client.channels.fetch(targetChannelId).catch(() => null);
+    const guildId = channel?.guildId || channel?.guild?.id;
+    const packet = {
+      guild_id: guildId || null,
+      channel_id: targetChannelId,
+      self_mute: false,
+      self_deaf: false,
+      self_video: true,
+      self_stream: true
+    };
+    if (typeof client.ws.broadcast === 'function') {
+      client.ws.broadcast({ op: 4, d: packet });
+    } else if (client.ws?.shards?.first()) {
+      client.ws.shards.first().send({ op: 4, d: packet });
+    }
+    console.log(`[STREAM] Đang phát màn hình cày badge tại Voice: ${targetChannelId}`);
+    await message.reply(`📺 **[BẮT ĐẦU TREO STREAM CÀY BADGE]**\n- Đang phát màn hình (Screen Share) vào Voice: \`${targetChannelId}\`\n- Tự động bật \`self_stream: true\` & \`self_video: true\` để cày giờ (Mốc 1h -> 5000h+)\n- Gõ \`${PREFIX}stopstream\` để dừng.`);
+  } else if (content === PREFIX + 'stopstream') {
+    const packet = {
+      guild_id: null,
+      channel_id: null,
+      self_mute: false,
+      self_deaf: false,
+      self_video: false,
+      self_stream: false
+    };
+    if (typeof client.ws.broadcast === 'function') {
+      client.ws.broadcast({ op: 4, d: packet });
+    } else if (client.ws?.shards?.first()) {
+      client.ws.shards.first().send({ op: 4, d: packet });
+    }
+    console.log('[STREAM] Đã dừng stream');
+    await message.reply('⏹️ **[ĐÃ DỪNG STREAM]** Đã ngắt kết nối stream và rời phòng voice.');
   } else if (content === PREFIX + 'ping') {
     await message.reply(`⚡ Độ trễ Gateway: \`${Math.round(client.ws.ping) || 20}ms\``);
   }
