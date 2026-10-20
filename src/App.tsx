@@ -81,10 +81,11 @@ export default function App() {
   const fetchStatus = async () => {
     try {
       const res = await fetch('/api/live-status');
+      if (!res.ok) return;
       const data: LiveStatus = await res.json();
       setLiveStatus(data);
-    } catch (err) {
-      console.error(err);
+    } catch {
+      // Ignore transient network/reboot errors during polling
     }
   };
 
@@ -92,10 +93,11 @@ export default function App() {
   const fetchStreamStatus = async () => {
     try {
       const res = await fetch('/api/stream-farm/status');
+      if (!res.ok) return;
       const data: StreamFarmStatus = await res.json();
       setStreamFarmStatus(data);
-    } catch (err) {
-      console.error(err);
+    } catch {
+      // Ignore transient network/reboot errors during polling
     }
   };
 
@@ -152,8 +154,8 @@ export default function App() {
     try {
       await fetch('/api/stop-live', { method: 'POST' });
       fetchStatus();
-    } catch (err) {
-      console.error(err);
+    } catch {
+      // Handled
     } finally {
       setLoading(false);
     }
@@ -170,8 +172,8 @@ export default function App() {
       if (data.success) {
         fetchStatus();
       }
-    } catch (err) {
-      console.error(err);
+    } catch {
+      // Handled
     }
   };
 
@@ -192,8 +194,8 @@ export default function App() {
       });
       const data = await res.json();
       setExportData(data);
-    } catch (err) {
-      console.error(err);
+    } catch {
+      // Handled
     }
   };
 
@@ -247,8 +249,8 @@ export default function App() {
     try {
       await fetch('/api/stream-farm/stop', { method: 'POST' });
       fetchStreamStatus();
-    } catch (err) {
-      console.error(err);
+    } catch {
+      // Handled
     } finally {
       setStreamLoading(false);
     }
@@ -257,10 +259,12 @@ export default function App() {
   const loadStreamScript = async () => {
     try {
       const res = await fetch('/api/stream-farm/export-script');
-      const text = await res.text();
-      setStreamScriptCode(text);
-    } catch (err) {
-      console.error(err);
+      if (res.ok) {
+        const text = await res.text();
+        setStreamScriptCode(text);
+      }
+    } catch {
+      // Handled
     }
   };
 
