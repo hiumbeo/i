@@ -49,6 +49,26 @@ interface StreamFarmStatus {
   logs: { time: string; type: 'info' | 'success' | 'warn' | 'error'; msg: string }[];
 }
 
+interface ScienceLog {
+  time: string;
+  type: 'info' | 'success' | 'warn' | 'error';
+  msg: string;
+}
+
+interface ScienceSpooferStatus {
+  isRunning: boolean;
+  mode: '5000_hours' | '100_games' | 'idle';
+  totalGames: number;
+  processedGames: number;
+  totalHoursAdded: number;
+  hoursPerGame: number;
+  currentBatch: number;
+  totalBatches: number;
+  userTag: string;
+  error: string | null;
+  logs: ScienceLog[];
+}
+
 export default function App() {
   const [token, setToken] = useState('');
   const [tokenType, setTokenType] = useState<'user' | 'bot'>('user');
@@ -62,7 +82,16 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState('');
   const [showTokenGuide, setShowTokenGuide] = useState(false);
-  const [activeTab, setActiveTab] = useState<'live' | 'streambadge' | 'export' | 'render' | 'guide'>('live');
+  const [activeTab, setActiveTab] = useState<'live' | 'sciencespoofer' | 'streambadge' | 'render' | 'export' | 'guide'>('live');
+
+  // Science Spoofer State (5000h & 100 Games via Discord Science API)
+  const [scienceStatus, setScienceStatus] = useState<ScienceSpooferStatus | null>(null);
+  const [scienceToken, setScienceToken] = useState('');
+  const [scienceCookie, setScienceCookie] = useState('');
+  const [scienceMode, setScienceMode] = useState<'5000_hours' | '100_games'>('5000_hours');
+  const [scienceHoursPerGame, setScienceHoursPerGame] = useState('5');
+  const [scienceLoading, setScienceLoading] = useState(false);
+  const [scienceError, setScienceError] = useState('');
 
   // Stream Farm State for 5000h Badge
   const [streamerToken, setStreamerToken] = useState('');
@@ -85,7 +114,7 @@ export default function App() {
       const data: LiveStatus = await res.json();
       setLiveStatus(data);
     } catch {
-      // Ignore transient network/reboot errors during polling
+      // Ignore transient network errors
     }
   };
 
@@ -97,16 +126,30 @@ export default function App() {
       const data: StreamFarmStatus = await res.json();
       setStreamFarmStatus(data);
     } catch {
-      // Ignore transient network/reboot errors during polling
+      // Ignore transient network errors
+    }
+  };
+
+  // Poll science spoofer status
+  const fetchScienceStatus = async () => {
+    try {
+      const res = await fetch('/api/science-spoofer/status');
+      if (!res.ok) return;
+      const data: ScienceSpooferStatus = await res.json();
+      setScienceStatus(data);
+    } catch {
+      // Ignore transient network errors
     }
   };
 
   useEffect(() => {
     fetchStatus();
     fetchStreamStatus();
+    fetchScienceStatus();
     const timer = setInterval(() => {
       fetchStatus();
       fetchStreamStatus();
+      fetchScienceStatus();
     }, 2000);
     return () => clearInterval(timer);
   }, []);
@@ -256,6 +299,54 @@ export default function App() {
     }
   };
 
+  const handleStartScience = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const effectiveToken = scienceToken.trim() || token.trim();
+    if (!effectiveToken) {
+      setScienceError('Vui lòng nhập DISCORD_TOKEN để chạy Spoofer!');
+      return;
+    }
+
+    setScienceLoading(true);
+    setScienceError('');
+
+    try {
+      const res = await fetch('/api/science-spoofer/start', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          token: effectiveToken,
+          cookie: scienceCookie.trim(),
+          hoursPerGame: Number(scienceHoursPerGame) || 5,
+          mode: scienceMode
+        })
+      });
+
+      const result = await res.json();
+      if (!result.success) {
+        setScienceError(result.error || 'Khởi chạy Spoofer thất bại!');
+      } else {
+        fetchScienceStatus();
+      }
+    } catch (err: any) {
+      setScienceError(err.message || 'Lỗi kết nối máy chủ');
+    } finally {
+      setScienceLoading(false);
+    }
+  };
+
+  const handleStopScience = async () => {
+    setScienceLoading(true);
+    try {
+      await fetch('/api/science-spoofer/stop', { method: 'POST' });
+      fetchScienceStatus();
+    } catch {
+      // Handled
+    } finally {
+      setScienceLoading(false);
+    }
+  };
+
   const loadStreamScript = async () => {
     try {
       const res = await fetch('/api/stream-farm/export-script');
@@ -336,7 +427,17 @@ export default function App() {
               : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Activity className="w-4 h-4" /> Bảng Điều Khiển Trực Tiếp
+          <Activity className="w-4 h-4" /> Bảng Điều Khiển Treo Acc
+        </button>
+        <button
+          onClick={() => setActiveTab('sciencespoofer')}
+          className={`flex items-center gap-2 py-3 px-4 text-sm font-medium border-b-2 transition ${
+            activeTab === 'sciencespoofer' 
+              ? 'border-cyan-500 text-cyan-300 bg-cyan-500/10' 
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Sparkles className="w-4 h-4 text-cyan-400" /> 🚀 Cày 5000h & 100 Games (Science Spoofer)
         </button>
         <button
           onClick={() => { setActiveTab('streambadge'); loadStreamScript(); }}
@@ -346,7 +447,17 @@ export default function App() {
               : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Trophy className="w-4 h-4 text-amber-400" /> 🏆 Cày Huy Hiệu Mới (1h - 5000h+)
+          <Trophy className="w-4 h-4 text-amber-400" /> 🎙️ Treo Stream Voice (1h - 5000h+)
+        </button>
+        <button
+          onClick={() => { setActiveTab('render'); loadExportCode(); }}
+          className={`flex items-center gap-2 py-3 px-4 text-sm font-medium border-b-2 transition ${
+            activeTab === 'render' 
+              ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10' 
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Zap className="w-4 h-4 text-emerald-400" /> 🌐 Sửa Web & Host Render 24/7
         </button>
         <button
           onClick={() => { setActiveTab('export'); loadExportCode(); }}
@@ -356,17 +467,7 @@ export default function App() {
               : 'border-transparent text-slate-400 hover:text-slate-200'
           }`}
         >
-          <Code className="w-4 h-4" /> Xuất File Tự Treo Trên Máy Tính / VPS
-        </button>
-        <button
-          onClick={() => { setActiveTab('render'); loadExportCode(); }}
-          className={`flex items-center gap-2 py-3 px-4 text-sm font-medium border-b-2 transition ${
-            activeTab === 'render' 
-              ? 'border-indigo-500 text-indigo-400 bg-indigo-500/10' 
-              : 'border-transparent text-slate-400 hover:text-slate-200'
-          }`}
-        >
-          <Zap className="w-4 h-4 text-amber-400" /> Cách Host Render.com 24/7 (Miễn Phí)
+          <Code className="w-4 h-4" /> 📦 File Mã Nguồn & Script Python
         </button>
         <button
           onClick={() => setActiveTab('guide')}
@@ -745,6 +846,375 @@ export default function App() {
 
             </div>
 
+          </div>
+        )}
+
+        {/* TAB: CÀY 5000H & 100 GAMES (DISCORD SCIENCE SPOOFER) */}
+        {activeTab === 'sciencespoofer' && (
+          <div className="space-y-6 animate-in fade-in duration-200">
+            {/* Hero Banner with Badge Preview */}
+            <div className="bg-gradient-to-r from-slate-900 via-cyan-950/40 to-slate-900 border border-cyan-500/30 rounded-3xl p-6 shadow-2xl relative overflow-hidden">
+              <div className="absolute top-0 right-0 w-80 h-80 bg-cyan-500/10 rounded-full blur-3xl pointer-events-none" />
+
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+                {/* Left Description */}
+                <div className="md:col-span-8 space-y-3">
+                  <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-cyan-500/10 border border-cyan-500/30 text-cyan-300 text-xs font-bold tracking-wide">
+                    <Sparkles className="w-3.5 h-3.5 text-cyan-400" />
+                    DISCORD SCIENCE SPOOFER API (CAHIT PROJECTS)
+                  </div>
+                  <h2 className="text-2xl font-black text-white tracking-tight flex items-center gap-2">
+                    Cày 5,000+ Giờ & 100+ Games Discord Ngay Lập Tức
+                  </h2>
+                  <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+                    Kỹ thuật sử dụng trực tiếp cổng API Telemetry <strong>/api/v9/science</strong> của Discord Client để gửi dữ liệu xác thực chơi game. 
+                    Không cần mở game thật, không tốn tài nguyên máy tính! Hệ thống tự động bắn dữ liệu của <strong>1,000 tựa game Windows có bản quyền</strong> với 5 giờ mỗi game, giúp tài khoản của bạn đạt ngay <strong>5,000+ Giờ</strong> và mở khóa huy hiệu máy tính cổ điển!
+                  </p>
+
+                  <div className="flex flex-wrap items-center gap-3 pt-2">
+                    <div className="flex items-center gap-2 bg-slate-950/80 px-3.5 py-1.5 rounded-xl border border-slate-800 text-xs font-mono">
+                      <Flame className="w-3.5 h-3.5 text-amber-400" />
+                      <span className="text-slate-400">Đã bắn:</span>
+                      <strong className="text-cyan-400">{scienceStatus?.totalHoursAdded || 0} giờ</strong>
+                    </div>
+                    <div className="flex items-center gap-2 bg-slate-950/80 px-3.5 py-1.5 rounded-xl border border-slate-800 text-xs font-mono">
+                      <Monitor className="w-3.5 h-3.5 text-emerald-400" />
+                      <span className="text-slate-400">Game xử lý:</span>
+                      <strong className="text-emerald-400">{scienceStatus?.processedGames || 0} / {scienceStatus?.totalGames || 1000}</strong>
+                    </div>
+                    <div className="flex items-center gap-2 bg-slate-950/80 px-3.5 py-1.5 rounded-xl border border-slate-800 text-xs font-mono">
+                      <span className={`w-2 h-2 rounded-full ${scienceStatus?.isRunning ? 'bg-cyan-400 animate-pulse' : 'bg-slate-500'}`} />
+                      <span className="text-slate-400">Trạng thái:</span>
+                      <strong className={scienceStatus?.isRunning ? 'text-cyan-400' : 'text-slate-400'}>
+                        {scienceStatus?.isRunning ? 'Đang gửi Science...' : 'Sẵn sàng'}
+                      </strong>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Badge Preview Card */}
+                <div className="md:col-span-4 flex flex-col items-center justify-center">
+                  <div className="relative group">
+                    <div className="absolute -inset-1 bg-gradient-to-r from-cyan-500 to-indigo-500 rounded-2xl blur opacity-30 group-hover:opacity-75 transition duration-500" />
+                    <div className="relative bg-slate-950 border border-cyan-500/40 rounded-2xl p-4 text-center space-y-2 shadow-xl">
+                      <div className="text-[11px] font-bold text-cyan-300 uppercase tracking-wider flex items-center justify-center gap-1.5">
+                        <Trophy className="w-3.5 h-3.5 text-amber-400" />
+                        Huy Hiệu Hồ Sơ Discord
+                      </div>
+                      <div className="w-24 h-24 mx-auto rounded-xl overflow-hidden border border-cyan-500/30 bg-slate-900 flex items-center justify-center p-1">
+                        <img 
+                          src="/public/assets/aistudio/Screenshot_20261021_050517_Discord_1d872617.jpg" 
+                          alt="Discord 5000 Hours Badge"
+                          className="w-full h-full object-cover rounded-lg"
+                        />
+                      </div>
+                      <div className="text-xs font-black text-white">5,000+ HOURS BADGE</div>
+                      <div className="text-[10px] text-slate-400 leading-tight">
+                        Màn hình máy tính hiển thị tổng giờ chơi trên Discord
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Stats Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1">
+                <div className="text-xs text-slate-400 flex items-center gap-1.5">
+                  <Code className="w-3.5 h-3.5 text-cyan-400" /> Cổng API
+                </div>
+                <div className="text-base font-bold text-white font-mono">/api/v9/science</div>
+                <div className="text-[10px] text-cyan-400">Endpoint Telemetry gốc</div>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1">
+                <div className="text-xs text-slate-400 flex items-center gap-1.5">
+                  <Monitor className="w-3.5 h-3.5 text-indigo-400" /> Cơ Sở Dữ Liệu
+                </div>
+                <div className="text-base font-bold text-white font-mono">10,400+ Games</div>
+                <div className="text-[10px] text-indigo-400">Discord Verified CDN</div>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1">
+                <div className="text-xs text-slate-400 flex items-center gap-1.5">
+                  <Zap className="w-3.5 h-3.5 text-amber-400" /> Tốc Độ Bắn
+                </div>
+                <div className="text-base font-bold text-white font-mono">100 Game / Gói</div>
+                <div className="text-[10px] text-amber-400">Kèm Jitter ±5% Chống Bot</div>
+              </div>
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-1">
+                <div className="text-xs text-slate-400 flex items-center gap-1.5">
+                  <Trophy className="w-3.5 h-3.5 text-emerald-400" /> Mục Tiêu
+                </div>
+                <div className="text-base font-bold text-white font-mono">5,000+ Giờ</div>
+                <div className="text-[10px] text-emerald-400">Mở full cấp huy hiệu</div>
+              </div>
+            </div>
+
+            {/* Main Form & Live Progress */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Form Controls */}
+              <div className="lg:col-span-5 space-y-6">
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+                  <h3 className="text-base font-bold text-white flex items-center gap-2">
+                    <Sparkles className="w-4 h-4 text-cyan-400" /> Cài Đặt Spoofer
+                  </h3>
+
+                  <form onSubmit={handleStartScience} className="space-y-4">
+                    {/* Token Input */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-medium text-slate-300">1. Discord Token của bạn *</label>
+                        {token && (
+                          <button
+                            type="button"
+                            onClick={() => setScienceToken(token)}
+                            className="text-[10px] text-cyan-400 hover:underline"
+                          >
+                            Lấy Token từ Tab 1
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="password"
+                        value={scienceToken}
+                        onChange={(e) => setScienceToken(e.target.value)}
+                        placeholder="Dán token Discord cần bắn giờ..."
+                        className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-4 py-3 text-xs text-white placeholder-slate-600 font-mono focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+
+                    {/* Cookie Input */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="text-xs font-medium text-slate-300">2. Cookie Discord (Không bắt buộc)</label>
+                        <span className="text-[10px] text-slate-500">Vượt Cloudflare / Firewall</span>
+                      </div>
+                      <input
+                        type="password"
+                        value={scienceCookie}
+                        onChange={(e) => setScienceCookie(e.target.value)}
+                        placeholder="Dán chuỗi cookie (F12 -> Network -> filter science -> copy cookie)..."
+                        className="w-full bg-slate-950 border border-slate-800 rounded-2xl px-4 py-3 text-xs text-white placeholder-slate-600 font-mono focus:outline-none focus:border-cyan-500"
+                      />
+                    </div>
+
+                    {/* Mode Selector */}
+                    <div>
+                      <label className="block text-xs font-medium text-slate-300 mb-1.5">3. Chế Độ Bắn</label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setScienceMode('5000_hours')}
+                          className={`p-3 rounded-xl border text-left text-xs font-medium transition ${
+                            scienceMode === '5000_hours'
+                              ? 'bg-cyan-600/20 border-cyan-500/50 text-cyan-200'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <div className="font-bold flex items-center gap-1.5">
+                            <Flame className="w-3.5 h-3.5 text-amber-400" /> 5,000+ Giờ Game
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-1">
+                            Bắn 1,000 game x 5h = 5,000h+
+                          </div>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setScienceMode('100_games')}
+                          className={`p-3 rounded-xl border text-left text-xs font-medium transition ${
+                            scienceMode === '100_games'
+                              ? 'bg-indigo-600/20 border-indigo-500/50 text-indigo-200'
+                              : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          <div className="font-bold flex items-center gap-1.5">
+                            <Monitor className="w-3.5 h-3.5 text-indigo-400" /> 100+ Games Badge
+                          </div>
+                          <div className="text-[10px] text-slate-400 mt-1">
+                            Mở khóa 100+ tựa game đã chơi
+                          </div>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Hours Per Game Selector */}
+                    {scienceMode === '5000_hours' && (
+                      <div>
+                        <label className="block text-xs font-medium text-slate-300 mb-1.5">
+                          4. Số Giờ Bắn Mỗi Game (Mặc định: 5 giờ)
+                        </label>
+                        <div className="grid grid-cols-3 gap-2">
+                          {['3', '5', '8'].map((hr) => (
+                            <button
+                              key={hr}
+                              type="button"
+                              onClick={() => setScienceHoursPerGame(hr)}
+                              className={`py-2 px-3 rounded-xl border text-xs font-mono font-bold transition ${
+                                scienceHoursPerGame === hr
+                                  ? 'bg-cyan-500 text-slate-950 border-cyan-400'
+                                  : 'bg-slate-950 text-slate-300 border-slate-800 hover:border-slate-700'
+                              }`}
+                            >
+                              {hr} Giờ / Game
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {scienceError && (
+                      <div className="bg-rose-500/10 border border-rose-500/30 rounded-2xl p-3 text-xs text-rose-300 flex items-start gap-2">
+                        <AlertCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+                        <div>{scienceError}</div>
+                      </div>
+                    )}
+
+                    {/* Action Buttons */}
+                    <div className="pt-2 flex items-center gap-3">
+                      {!scienceStatus?.isRunning ? (
+                        <button
+                          type="submit"
+                          disabled={scienceLoading}
+                          className="flex-1 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold py-3.5 px-4 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-cyan-600/30 transition uppercase disabled:opacity-50"
+                        >
+                          <Play className="w-4 h-4 fill-white" />
+                          {scienceLoading ? 'Đang kích hoạt...' : '🚀 BẮT ĐẦU BẮN 5,000 GIỜ'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={handleStopScience}
+                          disabled={scienceLoading}
+                          className="flex-1 bg-rose-600 hover:bg-rose-500 text-white font-bold py-3.5 px-4 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-lg shadow-rose-600/30 transition uppercase"
+                        >
+                          <Square className="w-4 h-4 fill-white" />
+                          ⏹️ DỪNG TIẾN TRÌNH SPOOFER
+                        </button>
+                      )}
+                    </div>
+                  </form>
+                </div>
+
+                {/* Download Python Scripts Box */}
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-3">
+                  <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                    <Code className="w-4 h-4 text-amber-400" /> Tải File Script Python Gốc
+                  </h4>
+                  <p className="text-xs text-slate-400 leading-relaxed">
+                    Nếu bạn muốn tự chạy script trực tiếp trên máy tính cá nhân bằng lệnh Python:
+                  </p>
+                  <div className="space-y-2 pt-1">
+                    <a
+                      href="/api/download/python-spoofer-5000h"
+                      download="discord_science_spoofer_5000h.py"
+                      className="flex items-center justify-between p-3 bg-slate-950 border border-slate-800 hover:border-cyan-500/50 rounded-xl text-xs font-mono text-cyan-300 transition"
+                    >
+                      <span className="flex items-center gap-2">
+                        🐍 <strong>spoofer_5000h.py</strong> (Bắn 5000 Giờ)
+                      </span>
+                      <span className="text-[10px] bg-cyan-500/20 px-2 py-0.5 rounded text-cyan-400 font-bold uppercase">Tải về</span>
+                    </a>
+                    <a
+                      href="/api/download/python-spoofer-100games"
+                      download="discord_science_spoofer_100games.py"
+                      className="flex items-center justify-between p-3 bg-slate-950 border border-slate-800 hover:border-indigo-500/50 rounded-xl text-xs font-mono text-indigo-300 transition"
+                    >
+                      <span className="flex items-center gap-2">
+                        🎮 <strong>spoofer_100_games.py</strong> (Bắn 100 Games)
+                      </span>
+                      <span className="text-[10px] bg-indigo-500/20 px-2 py-0.5 rounded text-indigo-400 font-bold uppercase">Tải về</span>
+                    </a>
+                  </div>
+                </div>
+              </div>
+
+              {/* Live Status & Console Logs */}
+              <div className="lg:col-span-7 space-y-6">
+                {/* Progress Card */}
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Zap className="w-4 h-4 text-cyan-400" /> Tiến Độ Bắn Dữ Liệu Science
+                    </h3>
+                    {scienceStatus?.userTag && (
+                      <span className="text-xs text-cyan-300 font-mono bg-cyan-500/10 border border-cyan-500/30 px-2.5 py-0.5 rounded-full">
+                        {scienceStatus.userTag}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Giant Hours Counter */}
+                  <div className="bg-slate-950 p-6 rounded-2xl border border-slate-800 flex flex-col md:flex-row items-center justify-between gap-4">
+                    <div>
+                      <div className="text-xs text-slate-400 font-mono">TỔNG GIỜ ĐÃ THÊM VÀO DISCORD:</div>
+                      <div className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 via-blue-400 to-indigo-400 font-mono mt-1">
+                        ~{scienceStatus?.totalHoursAdded || 0} GIỜ
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs text-slate-400 font-mono">TIẾN ĐỘ GAME:</div>
+                      <div className="text-2xl font-black text-emerald-400 font-mono mt-1">
+                        {scienceStatus?.processedGames || 0} / {scienceStatus?.totalGames || 1000}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs font-mono text-slate-400">
+                      <span>Tiến trình hoàn thành:</span>
+                      <span className="text-cyan-400 font-bold">
+                        {scienceStatus?.totalGames 
+                          ? Math.min(100, Math.round((scienceStatus.processedGames / scienceStatus.totalGames) * 100))
+                          : 0}%
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-800">
+                      <div 
+                        className="bg-gradient-to-r from-cyan-500 to-blue-500 h-full transition-all duration-300 rounded-full"
+                        style={{ 
+                          width: `${scienceStatus?.totalGames 
+                            ? Math.min(100, Math.round((scienceStatus.processedGames / scienceStatus.totalGames) * 100)) 
+                            : 0}%` 
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Console Logs */}
+                <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 shadow-2xl space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                      <Terminal className="w-4 h-4 text-cyan-400" />
+                      Live Science Console Logs
+                    </h3>
+                    <span className="text-[10px] text-cyan-400 font-mono">Tự động cập nhật 2s</span>
+                  </div>
+                  <div className="bg-slate-950 rounded-2xl p-4 font-mono text-xs text-slate-300 h-80 overflow-y-auto border border-slate-800 space-y-1">
+                    {scienceStatus?.logs && scienceStatus.logs.length > 0 ? (
+                      scienceStatus.logs.map((l, i) => (
+                        <div key={i} className="flex items-start gap-2 leading-relaxed">
+                          <span className="text-slate-600 shrink-0">[{l.time}]</span>
+                          <span className={`px-1.5 py-0.2 rounded text-[10px] font-bold uppercase shrink-0 ${
+                            l.type === 'success' ? 'bg-emerald-500/20 text-emerald-400' :
+                            l.type === 'error' ? 'bg-rose-500/20 text-rose-400' :
+                            l.type === 'warn' ? 'bg-amber-500/20 text-amber-400' : 'bg-cyan-500/20 text-cyan-400'
+                          }`}>
+                            {l.type}
+                          </span>
+                          <span className="text-slate-200 break-all">{l.msg}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-slate-600 text-center py-20">
+                        Chưa có nhật ký bắn Science. Nhấn "Bắt đầu bắn 5,000 giờ" để xem tiến trình thời gian thực.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         )}
 
