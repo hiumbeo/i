@@ -1583,18 +1583,28 @@ const EMBEDDED_HTML = `<!DOCTYPE html>
         }
 
         if (d.logs && d.logs.length > 0) {
-          const c = document.getElementById('logContainer');
-          c.innerHTML = d.logs.map(l => \`
-            <div class="flex items-start gap-1.5 pb-0.5">
-              <span class="text-slate-600 shrink-0">[\${l.time}]</span>
-              <span class="px-1 rounded text-[9px] font-bold uppercase shrink-0 \${
-                l.type === 'success' ? 'bg-emerald-500/20 text-emerald-400' :
-                l.type === 'error' ? 'bg-rose-500/20 text-rose-400' :
-                l.type === 'warn' ? 'bg-amber-500/20 text-amber-400' : 'bg-indigo-500/20 text-indigo-400'
-              }">\${l.type}</span>
-              <span class="text-slate-200 break-all">\${l.msg}</span>
-            </div>
-          \`).join('');
+          var c = document.getElementById('logContainer');
+          c.innerHTML = '';
+          d.logs.forEach(function(l) {
+            var div = document.createElement('div');
+            div.className = 'flex items-start gap-1.5 pb-0.5';
+            var timeSpan = document.createElement('span');
+            timeSpan.className = 'text-slate-600 shrink-0';
+            timeSpan.textContent = '[' + l.time + ']';
+            var badgeSpan = document.createElement('span');
+            badgeSpan.className = 'px-1 rounded text-[9px] font-bold uppercase shrink-0 ' + 
+              (l.type === 'success' ? 'bg-emerald-500/20 text-emerald-400' :
+               l.type === 'error' ? 'bg-rose-500/20 text-rose-400' :
+               l.type === 'warn' ? 'bg-amber-500/20 text-amber-400' : 'bg-indigo-500/20 text-indigo-400');
+            badgeSpan.textContent = l.type;
+            var msgSpan = document.createElement('span');
+            msgSpan.className = 'text-slate-200 break-all';
+            msgSpan.textContent = l.msg;
+            div.appendChild(timeSpan);
+            div.appendChild(badgeSpan);
+            div.appendChild(msgSpan);
+            c.appendChild(div);
+          });
         }
       } catch (e) {}
 
@@ -1620,12 +1630,21 @@ const EMBEDDED_HTML = `<!DOCTYPE html>
         }
 
         if (sf.logs && sf.logs.length > 0) {
-          document.getElementById('farmLogBox').innerHTML = sf.logs.map(l => \`
-            <div class="flex items-start gap-1">
-              <span class="text-slate-600">[\${l.time}]</span>
-              <span class="text-slate-200">\${l.msg}</span>
-            </div>
-          \`).join('');
+          var fBox = document.getElementById('farmLogBox');
+          fBox.innerHTML = '';
+          sf.logs.forEach(function(l) {
+            var div = document.createElement('div');
+            div.className = 'flex items-start gap-1';
+            var timeSpan = document.createElement('span');
+            timeSpan.className = 'text-slate-600';
+            timeSpan.textContent = '[' + l.time + ']';
+            var msgSpan = document.createElement('span');
+            msgSpan.className = 'text-slate-200';
+            msgSpan.textContent = l.msg;
+            div.appendChild(timeSpan);
+            div.appendChild(msgSpan);
+            fBox.appendChild(div);
+          });
         }
       } catch (e) {}
     }
@@ -1741,17 +1760,28 @@ const EMBEDDED_HTML = `<!DOCTYPE html>
         }
 
         if (sc.logs && sc.logs.length > 0) {
-          document.getElementById('scienceLogBox').innerHTML = sc.logs.map(l => `
-            <div class="flex items-start gap-1.5 pb-0.5">
-              <span class="text-slate-600 shrink-0">[${l.time}]</span>
-              <span class="px-1 rounded text-[9px] font-bold uppercase shrink-0 ${
-                l.type === 'success' ? 'bg-emerald-500/20 text-emerald-400' :
-                l.type === 'error' ? 'bg-rose-500/20 text-rose-400' :
-                l.type === 'warn' ? 'bg-amber-500/20 text-amber-400' : 'bg-cyan-500/20 text-cyan-400'
-              }">${l.type}</span>
-              <span class="text-slate-200 break-all">${l.msg}</span>
-            </div>
-          `).join('');
+          var box = document.getElementById('scienceLogBox');
+          box.innerHTML = '';
+          sc.logs.forEach(function(l) {
+            var div = document.createElement('div');
+            div.className = 'flex items-start gap-1.5 pb-0.5';
+            var timeSpan = document.createElement('span');
+            timeSpan.className = 'text-slate-600 shrink-0';
+            timeSpan.textContent = '[' + l.time + ']';
+            var badgeSpan = document.createElement('span');
+            badgeSpan.className = 'px-1 rounded text-[9px] font-bold uppercase shrink-0 ' + 
+              (l.type === 'success' ? 'bg-emerald-500/20 text-emerald-400' :
+               l.type === 'error' ? 'bg-rose-500/20 text-rose-400' :
+               l.type === 'warn' ? 'bg-amber-500/20 text-amber-400' : 'bg-cyan-500/20 text-cyan-400');
+            badgeSpan.textContent = l.type;
+            var msgSpan = document.createElement('span');
+            msgSpan.className = 'text-slate-200 break-all';
+            msgSpan.textContent = l.msg;
+            div.appendChild(timeSpan);
+            div.appendChild(badgeSpan);
+            div.appendChild(msgSpan);
+            box.appendChild(div);
+          });
         }
       } catch (e) {}
     }
